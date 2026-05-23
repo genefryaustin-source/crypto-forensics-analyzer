@@ -763,10 +763,41 @@ def create_sankey(df, top_n=20):
             errors="coerce"
         ).fillna(0)
 
+        # Clean addresses
+        df2["from_address"] = (
+            df2["from_address"]
+            .astype(str)
+            .str.strip()
+        )
+
+        df2["to_address"] = (
+            df2["to_address"]
+            .astype(str)
+            .str.strip()
+        )
+
+        # Remove obvious invalid rows only
+        invalid_vals = ["", "nan", "none", "null"]
+
         df2 = df2[
-            (df2["from_address"] != "") &
-            (df2["to_address"] != "") &
-            (df2["amount"] > 0)
+            ~df2["from_address"].str.lower().isin(invalid_vals) &
+            ~df2["to_address"].str.lower().isin(invalid_vals)
+            ]
+
+        # Numeric amounts
+        df2["amount"] = pd.to_numeric(
+            df2["amount"],
+            errors="coerce"
+        ).fillna(0)
+
+        # Keep meaningful flows
+        df2 = df2[df2["amount"] != 0]
+
+        # Remove self-transfers
+        df2 = df2[
+            df2["from_address"].str.lower()
+            !=
+            df2["to_address"].str.lower()
             ]
 
         flows = (
