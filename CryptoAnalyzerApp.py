@@ -761,10 +761,18 @@ def create_sankey(df, top_n=100):
                 .str.strip()
             )
 
+        df2["amount"] = (
+            df2["amount"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("$", "", regex=False)
+            .str.strip()
+        )
+
         df2["amount"] = pd.to_numeric(
             df2["amount"],
             errors="coerce"
-        ).fillna(0)
+        )
 
         # REMOVE INVALIDS
         invalid_vals = ["", "nan", "none", "null"]
