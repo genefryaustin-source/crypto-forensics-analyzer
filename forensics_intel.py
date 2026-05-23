@@ -592,16 +592,36 @@ def detect_peeling_chains(
 
         for _ in range(20):   # Max chain depth
             # Find next outbound from current_to with similar (slightly smaller) amount
-            candidates = df[
+            current_to_safe = str(current_to).strip().lower()
+
+            df2 = df.copy()
+
+            df2["from_address"] = (
+                df2["from_address"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .str.lower()
+            )
+
+            df2["amount"] = pd.to_numeric(
+                df2["amount"],
+                errors="coerce"
+            ).fillna(0)
+
+            candidates = df2[
                 (
-                        df["from_address"]
-                        .str.lower()
-                        ==
-                        str(current_to).lower()
+                        df2["from_address"] == current_to_safe
                 )
-                (df["amount"] <= current_amt) &
-                (df["amount"] >= current_amt * (1 - tolerance_pct))
-            ]
+                &
+                (
+                        df2["amount"] <= float(current_amt)
+                )
+                &
+                (
+                        df2["amount"] >= float(current_amt) * (1 - tolerance_pct)
+                )
+                ]
 
             if candidates.empty:
                 break
