@@ -738,68 +738,56 @@ def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────
 # SANKEY DIAGRAM
 # ─────────────────────────────────────────────────────────────
-def create_sankey(df, top_n=20):
-    """
-    Build a Plotly Sankey diagram from a transaction DataFrame.
+def create_sankey(df, top_n=100):
 
-    Compatibility fixes for Streamlit Cloud:
-    - No arrangement="snap" (added Plotly 5.12+, Cloud may run older)
-    - Node hovertemplate uses only %{label} — %{value} is unreliable on nodes
-    - Link hovertemplate is safe for all Plotly versions >=4.x
-    - Falls back gracefully on any rendering error
-    """
     if df is None or df.empty:
         return None
 
     try:
+
+        # SAFE COPY
         df2 = df.copy()
 
+        # CLEAN DATA
         df2 = df2.dropna(
             subset=["from_address", "to_address", "amount"]
         )
 
+        # NORMALIZE
+        for col in ["from_address", "to_address"]:
+            df2[col] = (
+                df2[col]
+                .astype(str)
+                .str.strip()
+            )
+
         df2["amount"] = pd.to_numeric(
             df2["amount"],
             errors="coerce"
         ).fillna(0)
 
-        # Clean addresses
-        df2["from_address"] = (
-            df2["from_address"]
-            .astype(str)
-            .str.strip()
-        )
-
-        df2["to_address"] = (
-            df2["to_address"]
-            .astype(str)
-            .str.strip()
-        )
-
-        # Remove obvious invalid rows only
+        # REMOVE INVALIDS
         invalid_vals = ["", "nan", "none", "null"]
 
         df2 = df2[
-            ~df2["from_address"].str.lower().isin(invalid_vals) &
+            ~df2["from_address"].str.lower().isin(invalid_vals)
+        ]
+
+        df2 = df2[
             ~df2["to_address"].str.lower().isin(invalid_vals)
-            ]
+        ]
 
-        # Numeric amounts
-        df2["amount"] = pd.to_numeric(
-            df2["amount"],
-            errors="coerce"
-        ).fillna(0)
-
-        # Keep meaningful flows
-        df2 = df2[df2["amount"] != 0]
-
-        # Remove self-transfers
+        # REMOVE SELF TRANSFERS
         df2 = df2[
             df2["from_address"].str.lower()
             !=
             df2["to_address"].str.lower()
-            ]
+        ]
 
+        # KEEP NONZERO FLOWS
+        df2 = df2[df2["amount"] > 0]
+
+        # BUILD FLOWS
         flows = (
             df2.groupby(
                 ["from_address", "to_address"],
@@ -808,20 +796,13 @@ def create_sankey(df, top_n=20):
             .sum()
         )
 
-        # Remove zero/negative flows
-        flows = flows[flows["amount"] > 0]
+        flows = flows.nlargest(top_n, "amount")
 
-        # Remove self-references
-        flows = flows[
-            flows["from_address"].str.lower()
-            !=
-            flows["to_address"].str.lower()
-            ]
-
-        # Keep largest flows
-        flows = flows.nlargest(max(top_n, 100), "amount")
+        # DEBUG
+        st.write("Sankey flow count:", len(flows))
 
         if flows.empty:
+            st.warning("Flows dataframe empty after filtering.")
             return None
 
         # Build node list — deduplicated, deterministic order
