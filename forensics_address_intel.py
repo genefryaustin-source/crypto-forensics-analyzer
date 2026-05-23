@@ -15,6 +15,8 @@ import streamlit as st
 import requests
 import json
 import logging
+import time
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Set, Tuple, Optional
 from pathlib import Path
@@ -465,6 +467,420 @@ def fetch_community_blacklist() -> Set[str]:
     return blacklist
 
 
+
+
+# ─────────────────────────────────────────────────────────────
+# 4b. GOPLUS SECURITY  (free, no API key required)
+#     30M+ flagged addresses across ETH/BSC/Polygon/Avalanche/
+#     Optimism/Arbitrum/Tron. Covers: malicious, phishing,
+#     honeypot-related, cybercrime, money laundering, mixer,
+#     sanctioned, darkweb transactions, financial crime.
+#     https://gopluslabs.io
+# ─────────────────────────────────────────────────────────────
+
+GOPLUS_API   = "https://api.gopluslabs.io/api/v1/address_security"
+GOPLUS_CHAIN_IDS = {
+    "ethereum":  "1",
+    "bsc":       "56",
+    "polygon":   "137",
+    "avalanche": "43114",
+    "arbitrum":  "42161",
+    "optimism":  "10",
+    "tron":      "tron",
+    "solana":    "solana",
+}
+
+# GoPlus result fields that indicate a risk — "1" = flagged
+GOPLUS_RISK_FIELDS = {
+    "malicious_address":               "Malicious Address",
+    "phishing_activities":             "Phishing",
+    "honeypot_related_address":        "Honeypot Related",
+    "blacklist_doubt":                 "Blacklist",
+    "cybercrime":                      "Cybercrime",
+    "money_laundering":                "Money Laundering",
+    "financial_crime":                 "Financial Crime",
+    "darkweb_transactions":            "Dark Web Transactions",
+    "mixer":                           "Mixer",
+    "sanctioned":                      "Sanctioned",
+    "stealing_attack":                 "Stealing Attack",
+    "fake_kyc":                        "Fake KYC",
+    "malicious_mining_activities":     "Malicious Mining",
+}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_goplus_address(address: str, chain: str = "ethereum") -> Dict:
+    """
+    Check a single address against GoPlus Security (free, no key).
+    Returns dict of risk flags and a combined risk score.
+    """
+    chain_id = GOPLUS_CHAIN_IDS.get(chain.lower(), "1")
+    result = {
+        "address":     address,
+        "chain":       chain,
+        "goplus_hit":  False,
+        "risk_flags":  [],
+        "risk_labels": "",
+        "risk_score":  0,
+        "source":      "GoPlus Security",
+    }
+    try:
+        resp = requests.get(
+            f"{GOPLUS_API}/{address}",
+            params={"chain_id": chain_id},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == 1:
+                r = data.get("result", {})
+                flags = []
+                for field, label in GOPLUS_RISK_FIELDS.items():
+                    if str(r.get(field, "0")) == "1":
+                        flags.append(label)
+                result["risk_flags"]  = flags
+                result["risk_labels"] = ", ".join(flags)
+                result["goplus_hit"]  = bool(flags)
+                result["risk_score"]  = min(100, len(flags) * 20)
+    except Exception as e:
+        logger.debug(f"GoPlus check failed for {address}: {e}")
+    return result
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def bulk_screen_goplus(df: pd.DataFrame, chain: str = "ethereum") -> pd.DataFrame:
+    """
+    Screen all unique addresses in dataset via GoPlus Security.
+    GoPlus accepts comma-separated addresses — batches of 50 per call.
+    Returns DataFrame: address | goplus_hit | risk_labels | risk_score
+    """
+    chain_id = GOPLUS_CHAIN_IDS.get(chain.lower(), "1")
+    all_addrs = list(set(
+        df["from_address"].astype(str).tolist() +
+        df["to_address"].astype(str).tolist()
+    ))
+    # Filter to valid-looking addresses only
+    all_addrs = [a for a in all_addrs if a and a != "nan" and len(a) > 10]
+
+    rows = []
+    BATCH = 50
+    for i in range(0, len(all_addrs), BATCH):
+        batch = all_addrs[i:i + BATCH]
+        addr_str = ",".join(batch)
+        try:
+            resp = requests.get(
+                f"{GOPLUS_API}/{addr_str}",
+                params={"chain_id": chain_id},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("code") == 1:
+                    result_map = data.get("result", {})
+                    for addr in batch:
+                        r     = result_map.get(addr.lower(), {})
+                        flags = [label for field, label in GOPLUS_RISK_FIELDS.items()
+                                 if str(r.get(field, "0")) == "1"]
+                        rows.append({
+                            "address":      addr,
+                            "goplus_hit":   bool(flags),
+                            "risk_labels":  ", ".join(flags),
+                            "risk_score":   min(100, len(flags) * 20),
+                            "source":       "GoPlus Security",
+                        })
+        except Exception as e:
+            logger.warning(f"GoPlus batch failed ({i}–{i+BATCH}): {e}")
+            for addr in batch:
+                rows.append({"address": addr, "goplus_hit": False,
+                             "risk_labels": "", "risk_score": 0, "source": "GoPlus Security"})
+        time.sleep(0.2)   # Respect free-tier rate limit
+
+    logger.info(f"✅ GoPlus: screened {len(rows)} addresses")
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+# ─────────────────────────────────────────────────────────────
+# 4c. USDC / USDT ON-CHAIN BLACKLISTS
+#     Circle (USDC) and Tether (USDT) can freeze addresses
+#     at the contract level. Frozen addresses cannot send
+#     or receive stablecoins. These blacklists are authoritative
+#     and public — fetchable via Etherscan event logs.
+# ─────────────────────────────────────────────────────────────
+
+USDC_CONTRACT  = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+USDT_CONTRACT  = "0xdac17f958d2ee523a2206206994597c13d831ec7"
+
+# keccak256("Blacklisted(address)") — USDC contract event
+USDC_BLACKLIST_TOPIC = "0xffa4e6181777692565cf28528fc88fd1516ea86b56da075a6462694dced20482"
+# keccak256("AddedBlackList(address)") — USDT contract event
+USDT_BLACKLIST_TOPIC = "0x42e160154868087d6bfdc0ca23d96a1c1cfa32f1b72ba9ba27b69b98a0d819d"
+USDT_REMOVE_TOPIC    = "0xd7e9ec6e6ecd65492dce6bf513cd6867560d49544421d0783ddf06e76c24470c"
+
+STABLECOIN_CACHE = Path("stablecoin_blacklist_cache.json")
+
+
+@st.cache_data(ttl=43200, show_spinner=False)   # 12-hour cache
+def fetch_stablecoin_blacklists(api_key: str = "") -> Dict[str, Set[str]]:
+    """
+    Fetch USDC and USDT on-chain blacklisted addresses via Etherscan getLogs.
+    Returns: {"USDC": {addr, ...}, "USDT": {addr, ...}}
+    These addresses are frozen at the contract level — cannot transact.
+    """
+    # Check disk cache
+    if STABLECOIN_CACHE.exists():
+        try:
+            cached = json.loads(STABLECOIN_CACHE.read_text())
+            if datetime.now().timestamp() - cached.get("ts", 0) < 43200:
+                logger.info("✅ Stablecoin blacklists loaded from cache")
+                return {k: set(v) for k, v in cached.get("lists", {}).items()}
+        except Exception:
+            pass
+
+    lists: Dict[str, Set[str]] = {"USDC": set(), "USDT": set()}
+
+    if not api_key:
+        logger.warning("No Etherscan API key — stablecoin blacklist unavailable")
+        return lists
+
+    # Fetch USDC blacklist events
+    try:
+        resp = requests.get(
+            "https://api.etherscan.io/v2/api",
+            params={
+                "chainid":   1,
+                "module":    "logs",
+                "action":    "getLogs",
+                "address":   USDC_CONTRACT,
+                "topic0":    USDC_BLACKLIST_TOPIC,
+                "fromBlock": "0",
+                "toBlock":   "latest",
+                "offset":    1000,
+                "apikey":    api_key,
+            },
+            timeout=20,
+        ).json()
+        if resp.get("status") == "1":
+            for log in resp.get("result", []):
+                # Address is in topic1, padded to 32 bytes
+                raw = log.get("topics", ["", ""])
+                if len(raw) > 1:
+                    addr = "0x" + raw[1][-40:]
+                    lists["USDC"].add(addr.lower())
+        logger.info(f"✅ USDC blacklist: {len(lists['USDC'])} addresses")
+    except Exception as e:
+        logger.warning(f"USDC blacklist fetch failed: {e}")
+
+    # Fetch USDT blacklist events (AddedBlackList minus RemovedBlackList)
+    usdt_added   = set()
+    usdt_removed = set()
+    for topic, target in [(USDT_BLACKLIST_TOPIC, usdt_added),
+                          (USDT_REMOVE_TOPIC,    usdt_removed)]:
+        try:
+            resp = requests.get(
+                "https://api.etherscan.io/v2/api",
+                params={
+                    "chainid":   1,
+                    "module":    "logs",
+                    "action":    "getLogs",
+                    "address":   USDT_CONTRACT,
+                    "topic0":    topic,
+                    "fromBlock": "0",
+                    "toBlock":   "latest",
+                    "offset":    1000,
+                    "apikey":    api_key,
+                },
+                timeout=20,
+            ).json()
+            if resp.get("status") == "1":
+                for log in resp.get("result", []):
+                    raw = log.get("topics", ["", ""])
+                    if len(raw) > 1:
+                        addr = "0x" + raw[1][-40:]
+                        target.add(addr.lower())
+        except Exception as e:
+            logger.warning(f"USDT blacklist event fetch failed: {e}")
+
+    lists["USDT"] = usdt_added - usdt_removed
+    logger.info(f"✅ USDT blacklist: {len(lists['USDT'])} addresses")
+
+    # Persist cache
+    try:
+        STABLECOIN_CACHE.write_text(json.dumps({
+            "ts":    datetime.now().timestamp(),
+            "lists": {k: list(v) for k, v in lists.items()},
+        }))
+    except Exception:
+        pass
+
+    return lists
+
+
+# ─────────────────────────────────────────────────────────────
+# 4d. HOP PROTOCOL SANCTIONS LIST  (free, GitHub)
+#     Hop Protocol publishes its OFAC-compliant sanctions list
+#     on GitHub. Well-maintained, EVM addresses.
+# ─────────────────────────────────────────────────────────────
+
+HOP_CACHE = Path("hop_sanctions_cache.json")
+
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def fetch_hop_sanctions_list() -> Set[str]:
+    """
+    Fetch Hop Protocol's public sanctions list from GitHub.
+    EVM addresses blocked from using the Hop bridge due to
+    OFAC SDN designation.
+    """
+    if HOP_CACHE.exists():
+        try:
+            cached = json.loads(HOP_CACHE.read_text())
+            if datetime.now().timestamp() - cached.get("ts", 0) < 7200:
+                return set(cached.get("addrs", []))
+        except Exception:
+            pass
+
+    addrs: Set[str] = set()
+    urls = [
+        "https://raw.githubusercontent.com/hop-protocol/hop/develop/packages/frontend/src/config/sanctions.ts",
+        "https://raw.githubusercontent.com/hop-protocol/hop/master/packages/frontend/src/config/sanctions.ts",
+    ]
+    for url in urls:
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                for line in resp.text.split("\n"):
+                    line = line.strip()
+                    # Lines look like: '0xABCD...',
+                    if line.startswith("'0x") or line.startswith('"0x'):
+                        addr = line.strip("'\",").strip()
+                        if len(addr) == 42:
+                            addrs.add(addr.lower())
+                if addrs:
+                    break
+        except Exception:
+            pass
+
+    # Also check Uniswap blocked addresses list
+    try:
+        resp = requests.get(
+            "https://raw.githubusercontent.com/Uniswap/interface/main/src/constants/addresses.ts",
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            for line in resp.text.split("\n"):
+                line = line.strip()
+                if "'0x" in line and len(line) < 60:
+                    import re
+                    found = re.findall(r"0x[a-fA-F0-9]{40}", line)
+                    for addr in found:
+                        addrs.add(addr.lower())
+    except Exception:
+        pass
+
+    try:
+        HOP_CACHE.write_text(json.dumps(
+            {"ts": datetime.now().timestamp(), "addrs": list(addrs)}
+        ))
+    except Exception:
+        pass
+
+    logger.info(f"✅ Hop/Uniswap sanctions: {len(addrs)} addresses")
+    return addrs
+
+
+# ─────────────────────────────────────────────────────────────
+# 4e. AGGREGATED INTEL SCREEN
+#     Runs GoPlus + Stablecoin blacklists + Hop sanctions +
+#     existing CryptoScamDB in one combined pass.
+#     Adds columns to df for each source and a unified hit flag.
+# ─────────────────────────────────────────────────────────────
+
+def screen_all_intel_sources(
+    df: pd.DataFrame,
+    api_key: str = "",
+    chain:   str = "ethereum",
+) -> pd.DataFrame:
+    """
+    Run all intelligence sources and merge into a single enriched DataFrame.
+
+    New columns added:
+      goplus_hit          bool   — GoPlus Security flagged this address
+      goplus_labels       str    — comma-separated GoPlus risk categories
+      usdc_frozen         bool   — address is frozen by Circle (USDC)
+      usdt_frozen         bool   — address is frozen by Tether (USDT)
+      stablecoin_frozen   bool   — frozen by either stablecoin issuer
+      hop_sanctions_hit   bool   — on Hop Protocol / Uniswap sanctions list
+      community_bl_hit    bool   — on CryptoScamDB community blacklist
+      intel_hit           bool   — flagged by ANY source
+      intel_sources       str    — which sources flagged this address
+    """
+    df = df.copy()
+    from_lower = df["from_address"].astype(str).str.lower()
+    to_lower   = df["to_address"].astype(str).str.lower()
+
+    # ── GoPlus ────────────────────────────────────────────────
+    with st.spinner("🔍 GoPlus Security screening…"):
+        gp_df = bulk_screen_goplus(df, chain)
+
+    if not gp_df.empty and "goplus_hit" in gp_df.columns:
+        gp_map_hit    = gp_df.set_index("address")["goplus_hit"].to_dict()
+        gp_map_labels = gp_df.set_index("address")["risk_labels"].to_dict()
+        df["goplus_hit"]    = (from_lower.map(gp_map_hit).fillna(False) |
+                               to_lower.map(gp_map_hit).fillna(False))
+        df["goplus_labels"] = (from_lower.map(gp_map_labels).fillna("") + " " +
+                               to_lower.map(gp_map_labels).fillna("")).str.strip()
+    else:
+        df["goplus_hit"]    = False
+        df["goplus_labels"] = ""
+
+    # ── Stablecoin blacklists ─────────────────────────────────
+    with st.spinner("🔒 Fetching USDC/USDT on-chain blacklists…"):
+        sc_lists = fetch_stablecoin_blacklists(api_key)
+
+    usdc_addrs = sc_lists.get("USDC", set())
+    usdt_addrs = sc_lists.get("USDT", set())
+    df["usdc_frozen"]       = from_lower.isin(usdc_addrs) | to_lower.isin(usdc_addrs)
+    df["usdt_frozen"]       = from_lower.isin(usdt_addrs) | to_lower.isin(usdt_addrs)
+    df["stablecoin_frozen"] = df["usdc_frozen"] | df["usdt_frozen"]
+
+    # ── Hop / Uniswap sanctions ───────────────────────────────
+    with st.spinner("🌉 Fetching Hop/Uniswap sanctions list…"):
+        hop_addrs = fetch_hop_sanctions_list()
+
+    df["hop_sanctions_hit"] = from_lower.isin(hop_addrs) | to_lower.isin(hop_addrs)
+
+    # ── CryptoScamDB (existing) ───────────────────────────────
+    with st.spinner("🌐 Fetching CryptoScamDB blacklist…"):
+        bl_addrs = fetch_community_blacklist()
+
+    df["community_bl_hit"] = from_lower.isin(bl_addrs) | to_lower.isin(bl_addrs)
+
+    # ── Combined flag ─────────────────────────────────────────
+    df["intel_hit"] = (df["goplus_hit"] | df["stablecoin_frozen"] |
+                       df["hop_sanctions_hit"] | df["community_bl_hit"])
+
+    def _sources(row):
+        parts = []
+        if row.get("goplus_hit"):        parts.append(f"GoPlus({row.get('goplus_labels','')})")
+        if row.get("usdc_frozen"):       parts.append("USDC Frozen")
+        if row.get("usdt_frozen"):       parts.append("USDT Frozen")
+        if row.get("hop_sanctions_hit"): parts.append("Hop/Uniswap Sanctions")
+        if row.get("community_bl_hit"):  parts.append("CryptoScamDB")
+        return ", ".join(parts)
+
+    df["intel_sources"] = df.apply(_sources, axis=1)
+
+    total = int(df["intel_hit"].sum())
+    logger.info(
+        f"✅ Intel aggregate: {total} hits — "
+        f"GoPlus:{int(df['goplus_hit'].sum())} / "
+        f"USDC:{int(df['usdc_frozen'].sum())} / "
+        f"USDT:{int(df['usdt_frozen'].sum())} / "
+        f"Hop:{int(df['hop_sanctions_hit'].sum())} / "
+        f"ScamDB:{int(df['community_bl_hit'].sum())}"
+    )
+    return df
+
 def screen_darknet_intelligence(df: pd.DataFrame) -> pd.DataFrame:
     """Screen addresses against darknet intelligence sources."""
     df = df.copy()
@@ -819,33 +1235,118 @@ def render_address_intel_ui(df: pd.DataFrame):
                 st.info("No known exchange endpoints detected in dataset.")
 
     with ai_tabs[3]:
-        st.markdown("**Darknet Intelligence Screening**")
+        st.markdown("**Address Intelligence Screening — 5 Sources**")
         st.caption(
-            "Screens addresses against darknet market address databases, "
-            "community blacklists (CryptoScamDB), and behavioral patterns."
+            "Screens all addresses against GoPlus Security (30M+ addresses), "
+            "USDC/USDT on-chain freeze lists, Hop/Uniswap sanctions, "
+            "CryptoScamDB, and darknet market databases."
         )
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            if st.button("🕵️ Screen Darknet Intel", type="primary", key="run_dark"):
+
+        # Source overview
+        s1, s2, s3, s4, s5 = st.columns(5)
+        s1.info("🔍 **GoPlus**\n30M+ addresses\nFree · No key")
+        s2.info("💵 **USDC Frozen**\nCircle blacklist\nNeeds ETH key")
+        s3.info("💵 **USDT Frozen**\nTether blacklist\nNeeds ETH key")
+        s4.info("🌉 **Hop/Uniswap**\nSanctions list\nFree · GitHub")
+        s5.info("🌐 **CryptoScamDB**\nCommunity list\nFree · GitHub")
+
+        # Get API key for stablecoin blacklists
+        _eth_key = ""
+        try:
+            from CryptoAnalyzerApp import get_key
+            _eth_key = get_key("etherscan_key")
+        except Exception:
+            pass
+
+        # ── Full aggregated screen ────────────────────────────
+        st.markdown("---")
+        if st.button("🔍 Run Full Intel Screen (All 5 Sources)", type="primary", key="run_intel_all"):
+            intel_df = screen_all_intel_sources(df, api_key=_eth_key)
+            st.session_state.intel_df = intel_df
+            hits = int(intel_df["intel_hit"].sum())
+            if hits > 0:
+                st.error(f"🚨 {hits} addresses flagged across all sources")
+                mi1,mi2,mi3,mi4,mi5 = st.columns(5)
+                mi1.metric("GoPlus",          int(intel_df["goplus_hit"].sum()))
+                mi2.metric("USDC Frozen",      int(intel_df["usdc_frozen"].sum()))
+                mi3.metric("USDT Frozen",      int(intel_df["usdt_frozen"].sum()))
+                mi4.metric("Hop/Uniswap",      int(intel_df["hop_sanctions_hit"].sum()))
+                mi5.metric("CryptoScamDB",     int(intel_df["community_bl_hit"].sum()))
+            else:
+                st.success("✅ No flags across any source")
+
+        if "intel_df" in st.session_state:
+            idf  = st.session_state.intel_df
+            hits = idf[idf["intel_hit"]] if "intel_hit" in idf.columns else pd.DataFrame()
+            if not hits.empty:
+                it1, it2 = st.tabs(["🔍 All Hits", "📊 Source Breakdown"])
+                with it1:
+                    show = [c for c in ["date","from_address","to_address","amount","token",
+                                        "intel_sources","goplus_labels","risk_level"]
+                            if c in hits.columns]
+                    st.dataframe(hits[show], width='stretch', hide_index=True)
+                    st.download_button("⬇️ Export Intel Hits",
+                        hits[show].to_csv(index=False).encode(),
+                        "intel_hits.csv", "text/csv")
+                with it2:
+                    source_map = {
+                        "GoPlus Security":      ("goplus_hit",        "goplus_labels"),
+                        "USDC Frozen":          ("usdc_frozen",       None),
+                        "USDT Frozen":          ("usdt_frozen",       None),
+                        "Hop/Uniswap Sanctions":("hop_sanctions_hit", None),
+                        "CryptoScamDB":         ("community_bl_hit",  None),
+                    }
+                    for src_name, (hit_col, label_col) in source_map.items():
+                        if hit_col in hits.columns:
+                            src_hits = hits[hits[hit_col]]
+                            if not src_hits.empty:
+                                st.markdown(f"**{src_name}** — {len(src_hits)} hits")
+                                extra = [label_col] if label_col and label_col in src_hits.columns else []
+                                scols = [c for c in ["from_address","to_address","amount","token"] + extra
+                                         if c in src_hits.columns]
+                                st.dataframe(src_hits[scols].head(20),
+                                             width='stretch', hide_index=True)
+                                st.markdown("---")
+
+        # ── Individual source buttons ─────────────────────────
+        st.markdown("**Or run individual sources:**")
+        icol1, icol2, icol3 = st.columns(3)
+
+        with icol1:
+            if st.button("🕵️ Darknet Patterns Only", key="run_dark"):
                 with st.spinner("Screening darknet intelligence…"):
                     dark_df = screen_darknet_intelligence(df)
                     st.session_state.dark_df = dark_df
-                    hits = dark_df["darknet_hit"].sum()
-                st.success(f"Found {hits} darknet-related transactions") if hits else st.success("✅ No hits")
-        with col_d2:
-            if st.button("🌐 Fetch Community Blacklist", key="run_blacklist"):
-                with st.spinner("Downloading CryptoScamDB blacklist…"):
+                    hits = int(dark_df["darknet_hit"].sum())
+                st.success(f"Found {hits} hits") if hits else st.success("✅ No hits")
+
+        with icol2:
+            if st.button("🌐 CryptoScamDB Only", key="run_blacklist"):
+                with st.spinner("Downloading CryptoScamDB…"):
                     bl = fetch_community_blacklist()
                     st.session_state.community_bl = bl
                 st.success(f"✅ {len(bl)} addresses in blacklist")
 
+        with icol3:
+            if st.button("🔍 GoPlus Single Address", key="run_gp_single"):
+                gp_addr = st.session_state.get("rep_addr","")
+                if gp_addr:
+                    with st.spinner(f"Checking {gp_addr[:20]}… via GoPlus…"):
+                        gp_result = fetch_goplus_address(gp_addr)
+                    if gp_result["goplus_hit"]:
+                        st.error(f"🚨 GoPlus flags: {gp_result['risk_labels']}")
+                    else:
+                        st.success("✅ GoPlus: no flags")
+                else:
+                    st.info("Enter an address in the Reputation Score tab first.")
+
         if "dark_df" in st.session_state:
-            ddf = st.session_state.dark_df
-            hits = ddf[ddf["darknet_hit"]]
-            if not hits.empty:
+            ddf  = st.session_state.dark_df
+            dhits = ddf[ddf["darknet_hit"]] if "darknet_hit" in ddf.columns else pd.DataFrame()
+            if not dhits.empty:
                 show = [c for c in ["date","from_address","to_address","amount",
-                                     "token","darknet_entity","risk_level"] if c in hits.columns]
-                st.dataframe(hits[show], width='stretch', hide_index=True)
+                                     "token","darknet_entity","risk_level"] if c in dhits.columns]
+                st.dataframe(dhits[show], width='stretch', hide_index=True)
 
     with ai_tabs[4]:
         st.markdown("**Change Address Detection**")
