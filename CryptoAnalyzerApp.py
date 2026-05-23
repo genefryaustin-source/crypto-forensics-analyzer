@@ -290,7 +290,7 @@ with st.sidebar:
     for group, pages in NAV_GROUPS.items():
         st.markdown(f"**{group}**")
         for pg in pages:
-            if st.button(pg, key=f"nav_{pg}", width='content',
+            if st.button(pg, key=f"nav_{pg}", width='stretch',
                          type="primary" if st.session_state.nav_page == pg else "secondary"):
                 st.session_state.nav_page = pg
                 st.rerun()
@@ -401,9 +401,9 @@ if st.session_state.get("processed_df") is not None:
                    "trace_hops", "trace_df", "trace_summary"]:
             st.session_state.pop(_k, None)
         st.rerun()
-if st.sidebar.button("Load Sample Data (BSC/DeFi)", width='content'):
+if st.sidebar.button("Load Sample Data (BSC/DeFi)", width='stretch'):
     st.session_state.sample = True
-if st.sidebar.button("Load Sample Data (Bitcoin)", width='content'):
+if st.sidebar.button("Load Sample Data (Bitcoin)", width='stretch'):
     st.session_state.sample_btc = True
 
 st.sidebar.divider()
@@ -413,10 +413,10 @@ lookup_chain_select  = st.sidebar.selectbox("Chain", ["ethereum", "bsc", "polygo
 
 col_lookup1, col_lookup2 = st.sidebar.columns(2)
 with col_lookup1:
-    if st.button("🔍 Lookup", width='content'):
+    if st.button("🔍 Lookup", width='stretch'):
         st.session_state.do_lookup = True
 with col_lookup2:
-    if st.button("🔗 Both Directions", width='content'):
+    if st.button("🔗 Both Directions", width='stretch'):
         st.session_state.do_lookup_both = True
 
 
@@ -637,65 +637,128 @@ def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
 # SANKEY DIAGRAM
 # ─────────────────────────────────────────────────────────────
 def create_sankey(df, top_n=20):
-    if df.empty:
+    """
+    Build a Plotly Sankey diagram from a transaction DataFrame.
+
+    Compatibility fixes for Streamlit Cloud:
+    - No arrangement="snap" (added Plotly 5.12+, Cloud may run older)
+    - Node hovertemplate uses only %{label} — %{value} is unreliable on nodes
+    - Link hovertemplate is safe for all Plotly versions >=4.x
+    - Falls back gracefully on any rendering error
+    """
+    if df is None or df.empty:
         return None
 
-    flows = (df.groupby(['from_address', 'to_address'])['amount']
-               .sum().reset_index()
-               .nlargest(top_n, 'amount'))
-
-    all_nodes = list(pd.concat([flows['from_address'], flows['to_address']]).unique())
-    node_idx  = {n: i for i, n in enumerate(all_nodes)}
-
-    # Colour nodes by risk
-    node_colors = []
-    risk_map = {}
-    for _, row in df.iterrows():
-        risk_map[row['from_address']] = row.get('risk_level', 'LOW')
-        risk_map[row['to_address']]   = row.get('risk_level', 'LOW')
-
-    risk_color = {"CRITICAL": "#ff4444", "HIGH": "#ff8800", "MEDIUM": "#ffcc00", "LOW": "#22c55e"}
-    for n in all_nodes:
-        node_colors.append(risk_color.get(risk_map.get(n, 'LOW'), '#888888'))
-
-    def hex_to_rgba(hex_color, alpha=0.35):
-        """Safely convert #rrggbb to rgba(r,g,b,alpha)."""
-        h = hex_color.lstrip('#')
-        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        return f"rgba({r},{g},{b},{alpha})"
-
-    # Link colours by source risk
-    link_colors = []
-    for _, row in flows.iterrows():
-        lvl  = risk_map.get(row['from_address'], 'LOW')
-        base = risk_color.get(lvl, '#888888')
-        link_colors.append(hex_to_rgba(base))
-    node_labels = [str(n)[:16]+"…" if len(str(n))>16 else str(n) for n in all_nodes]
-
-    fig = go.Figure(data=[go.Sankey(
-        arrangement="snap",
-        node=dict(
-            pad=20, thickness=18,
-            line=dict(color="rgba(0,0,0,0.3)", width=0.5),
-            label=node_labels,
-            color=node_colors,
-            hovertemplate='<b>%{label}</b><br>Total flow: $%{value:,.2f}<extra></extra>'
-        ),
-        link=dict(
-            source=[node_idx[r['from_address']] for _, r in flows.iterrows()],
-            target=[node_idx[r['to_address']]   for _, r in flows.iterrows()],
-            value=flows['amount'].tolist(),
-            color=link_colors,
-            hovertemplate='%{source.label} → %{target.label}<br>$%{value:,.2f}<extra></extra>'
+    try:
+        flows = (
+            df.groupby(["from_address", "to_address"])["amount"]
+            .sum()
+            .reset_index()
+            .nlargest(top_n, "amount")
         )
-    )])
-    fig.update_layout(
-        title_text="💸 Fund Flow Sankey — node color = risk level",
-        height=700,
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(size=11)
-    )
-    return fig
+
+        if flows.empty:
+            return None
+
+        # Build node list — deduplicated, deterministic order
+        src_nodes  = flows["from_address"].tolist()
+        tgt_nodes  = flows["to_address"].tolist()
+        all_nodes  = list(dict.fromkeys(src_nodes + tgt_nodes))  # preserves order, deduplicates
+        node_idx   = {n: i for i, n in enumerate(all_nodes)}
+
+        # Risk colour map (vectorized — avoids slow iterrows on large df)
+        RCOL = {"CRITICAL": "#ff4444", "HIGH": "#ff8800", "MEDIUM": "#ffcc00", "LOW": "#22c55e"}
+        risk_map = {}
+        if "risk_level" in df.columns:
+            for addr_col in ["from_address", "to_address"]:
+                addr_risk = df.groupby(addr_col)["risk_level"].agg(
+                    lambda x: x.mode()[0] if len(x) else "LOW"
+                ).to_dict()
+                for addr, risk in addr_risk.items():
+                    # Keep highest risk seen for this address
+                    order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+                    if order.get(risk, 0) > order.get(risk_map.get(addr, "LOW"), 0):
+                        risk_map[addr] = risk
+
+        def _hex_rgba(hex_col: str, alpha: float = 0.4) -> str:
+            h = hex_col.lstrip("#")
+            if len(h) != 6:
+                return f"rgba(136,136,136,{alpha})"
+            try:
+                r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+                return f"rgba({r},{g},{b},{alpha})"
+            except ValueError:
+                return f"rgba(136,136,136,{alpha})"
+
+        # Node colours and labels
+        node_colors = [RCOL.get(risk_map.get(n, "LOW"), "#888888") for n in all_nodes]
+        node_labels = [
+            (str(n)[:14] + "…" if len(str(n)) > 14 else str(n))
+            for n in all_nodes
+        ]
+
+        # Link colours (by source node risk)
+        link_colors = [
+            _hex_rgba(RCOL.get(risk_map.get(r["from_address"], "LOW"), "#888888"))
+            for _, r in flows.iterrows()
+        ]
+
+        # Build custom hover data for links (Plotly >=4.x compatible)
+        link_hover = [
+            f"{node_labels[node_idx[r['from_address']]]} → "
+            f"{node_labels[node_idx[r['to_address']]]}<br>"
+            f"${r['amount']:,.2f}"
+            for _, r in flows.iterrows()
+        ]
+
+        # Node volume totals for hover (compute manually — don't rely on Plotly internals)
+        node_vol = {}
+        for _, r in flows.iterrows():
+            node_vol[r["from_address"]] = node_vol.get(r["from_address"], 0) + r["amount"]
+            node_vol[r["to_address"]]   = node_vol.get(r["to_address"],   0) + r["amount"]
+
+        node_hover = [
+            f"{node_labels[i]}<br>Risk: {risk_map.get(n,'LOW')}<br>Volume: ${node_vol.get(n,0):,.2f}"
+            for i, n in enumerate(all_nodes)
+        ]
+
+        # ── Build Sankey ─────────────────────────────────────────
+        # NOTE: No arrangement="snap" — not supported in Plotly <5.12
+        # NOTE: Node hovertemplate uses only safe variables (%{customdata})
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=18,
+                thickness=16,
+                line=dict(color="rgba(0,0,0,0.25)", width=0.5),
+                label=node_labels,
+                color=node_colors,
+                customdata=node_hover,
+                hovertemplate="%{customdata}<extra></extra>",
+            ),
+            link=dict(
+                source=[node_idx[r["from_address"]] for _, r in flows.iterrows()],
+                target=[node_idx[r["to_address"]]   for _, r in flows.iterrows()],
+                value=flows["amount"].tolist(),
+                color=link_colors,
+                customdata=link_hover,
+                hovertemplate="%{customdata}<extra></extra>",
+            ),
+        )])
+
+        fig.update_layout(
+            title_text="💸 Fund Flow Sankey — node colour = risk level",
+            height=680,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10),
+            margin=dict(l=20, r=20, t=50, b=20),
+        )
+        return fig
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Sankey build failed: {e}")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1000,7 +1063,7 @@ if (st.session_state.get("do_lookup") or st.session_state.get("do_lookup_both"))
                 all_txs = pd.concat([result['native_txs'], result['token_txs']], ignore_index=True)
 
                 if not all_txs.empty:
-                    st.dataframe(all_txs.head(5000), width='content')
+                    st.dataframe(all_txs.head(5000), width='stretch')
 
                     if st.button("➕ Add to dataset"):
                         if "loaded_data" not in st.session_state:
@@ -1129,7 +1192,7 @@ if df is not None:
                              color_discrete_map={"CRITICAL":"#ff4444","HIGH":"#ff8800",
                                                  "MEDIUM":"#ffcc00","LOW":"#22c55e"})
             fig_pie.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_pie, width='content')
+            st.plotly_chart(fig_pie, width='stretch')
 
         with col_b:
             st.markdown("**Volume by Token**")
@@ -1137,7 +1200,7 @@ if df is not None:
             fig_bar = px.bar(vol_token, x='token', y='amount',
                              color='amount', color_continuous_scale='Reds')
             fig_bar.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_bar, width='content')
+            st.plotly_chart(fig_bar, width='stretch')
 
         # Top flagged addresses
         st.markdown("**Top Flagged Addresses**")
@@ -1145,7 +1208,7 @@ if df is not None:
             df[['from_address','risk_score']].rename(columns={'from_address':'address'}),
             df[['to_address','risk_score']].rename(columns={'to_address':'address'})
         ]).groupby('address')['risk_score'].max().reset_index().nlargest(10, 'risk_score')
-        st.dataframe(addr_risk, width='content', hide_index=True)
+        st.dataframe(addr_risk, width='stretch', hide_index=True)
 
     # ── TAB 2: Transactions ──────────────────────────────────
     elif page == '📋 Transactions':
@@ -1209,24 +1272,54 @@ if df is not None:
                 "text/csv",
         )
 
-    # ── TAB 3: Sankey ────────────────────────────────────────
+    # ── Sankey Flow ───────────────────────────────────────
     elif page == '💸 Sankey Flow':
         st.subheader("💸 Fund Flow Sankey Diagram")
-        top_n = st.slider("Max flows to display", 5, 50, 20)
-        if st.button("🔄 Generate Sankey", type="primary"):
+        st.caption(
+            "Shows fund flows between top addresses. Node colour = risk level. "
+            "Link colour = source risk. Hover for address details."
+        )
+
+        top_n = st.slider("Max flows to display", 5, 100, 20, key="sankey_top_n")
+
+        # Auto-generate on first visit; regenerate when slider changes or button clicked
+        sankey_key = f"sankey_fig_{top_n}_{len(df)}"
+        if st.button("🔄 Generate / Refresh Sankey", type="primary", key="gen_sankey") or                 "sankey_fig" not in st.session_state or                 st.session_state.get("sankey_key") != sankey_key:
+
             with st.spinner("Building Sankey diagram…"):
                 fig_s = create_sankey(df, top_n)
-                if fig_s:
-                    st.plotly_chart(fig_s, width='content')
-                else:
-                    st.warning("Not enough data to generate Sankey.")
+
+            if fig_s is not None:
+                st.session_state.sankey_fig = fig_s
+                st.session_state.sankey_key = sankey_key
+            else:
+                st.session_state.pop("sankey_fig", None)
+                st.warning(
+                    "Not enough data to generate Sankey. "
+                    "Dataset needs at least 2 unique addresses with transactions between them."
+                )
+
+        # Render from session_state — survives nav clicks and reruns
+        if "sankey_fig" in st.session_state:
+            try:
+                st.plotly_chart(
+                    st.session_state.sankey_fig,
+                    width='stretch',
+                    config={"displayModeBar": True, "scrollZoom": False},
+                )
+            except Exception as e:
+                st.error(f"Sankey render error: {e}")
+                st.info(
+                    "If this error persists on Streamlit Cloud, check that plotly>=5.0.0 "
+                    "is in your requirements.txt"
+                )
 
     # ── TAB 4: Timeline ──────────────────────────────────────
     elif page == '📅 Timeline':
         st.subheader("📅 Transaction Timeline")
         fig_tl = create_timeline(df)
         if fig_tl:
-            st.plotly_chart(fig_tl, width='content')
+            st.plotly_chart(fig_tl, width='stretch')
         else:
             st.info("No date column detected in dataset.")
 
@@ -1237,7 +1330,7 @@ if df is not None:
             weekly = df_dated.groupby('week')['amount'].sum().reset_index()
             fig_weekly = px.bar(weekly, x='week', y='amount', title="Weekly Volume")
             fig_weekly.update_layout(height=280)
-            st.plotly_chart(fig_weekly, width='content')
+            st.plotly_chart(fig_weekly, width='stretch')
 
     # ── TAB 5: Multi-hop ─────────────────────────────────────
     elif page == '🔗 Multi-hop Tracer':
@@ -1254,7 +1347,7 @@ if df is not None:
 
         col_trace1, col_trace2, col_trace3 = st.columns(3)
         with col_trace1:
-            if st.button("🔍 Trace", type="primary", width='content') and start_addr:
+            if st.button("🔍 Trace", type="primary", width='stretch') and start_addr:
                 with st.spinner(f"Tracing {trace_direction.lower()} up to {max_hops} hops…"):
                     tracer = HopTracer(
                         df,
@@ -1293,23 +1386,23 @@ if df is not None:
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, width='content', hide_index=True)
+                                st.dataframe(styled, width='stretch', hide_index=True)
                     with fwd_tabs[1]:
                         for hop_num, txs in trace_result["backward"]["hops"].items():
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, width='content', hide_index=True)
+                                st.dataframe(styled, width='stretch', hide_index=True)
                 else:
                     for hop_num, txs in trace_result["hops"].items():
                         with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                             hop_df = pd.DataFrame(txs)
                             styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                            st.dataframe(styled, width='content', hide_index=True)
+                            st.dataframe(styled, width='stretch', hide_index=True)
 
             with result_tabs[2]:
                 addr_summary = tracer.get_address_risk_summary(trace_result)
-                st.dataframe(addr_summary, width='content')
+                st.dataframe(addr_summary, width='stretch')
 
             with result_tabs[3]:
                 # Create Sankey from trace
@@ -1325,7 +1418,7 @@ if df is not None:
                     trace_df = pd.DataFrame(all_txs_list)
                     fig_trace = create_sankey(trace_df, top_n=50)
                     if fig_trace:
-                        st.plotly_chart(fig_trace, width='content')
+                        st.plotly_chart(fig_trace, width='stretch')
 
     # ── TAB 6: AI Analysis ───────────────────────────────────
     elif page == '🤖 Claude AI':
@@ -1431,7 +1524,7 @@ if df is not None:
                               else "color:red" if "❌" in str(v) else "",
                     subset=["Status"]
                 ),
-                width='content',
+                width='stretch',
                 hide_index=True,
         )
 
@@ -1855,7 +1948,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["anomalies"]:
                     anom_df = pd.DataFrame(res["anomalies"][:50])
                     st.dataframe(anom_df[["address","type","severity","detail","tx_hash"]],
-                                 width='content', hide_index=True)
+                                 width='stretch', hide_index=True)
                 else:
                     st.info("No behavioral anomalies detected.")
 
@@ -1864,7 +1957,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["mixers"]:
                     mix_df = pd.DataFrame(res["mixers"])
                     st.dataframe(mix_df[["address","mixer_score","fan_in","fan_out","total_volume","classification"]].style.background_gradient(
-                        subset=["mixer_score"], cmap="Reds"), width='content', hide_index=True)
+                        subset=["mixer_score"], cmap="Reds"), width='stretch', hide_index=True)
                 else:
                     st.info("No mixer candidates detected.")
 
@@ -1886,7 +1979,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["peeling"]:
                     peel_df = pd.DataFrame(res["peeling"])
                     st.dataframe(peel_df[["chain_length","start_address","end_address","start_amount","end_amount","peel_pct","severity"]],
-                                 width='content', hide_index=True)
+                                 width='stretch', hide_index=True)
                 else:
                     st.info("No peeling chains detected.")
 
@@ -1895,7 +1988,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["cross_chain"]:
                     cc_df = pd.DataFrame(res["cross_chain"])
                     st.dataframe(cc_df[["chain_from","chain_to","amount","delta_hours","token_a","token_b","address_from"]],
-                                 width='content', hide_index=True)
+                                 width='stretch', hide_index=True)
                 else:
                     st.info("No cross-chain hops detected (requires multi-chain dataset).")
 
@@ -1933,13 +2026,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             v3.metric("🟠 Rapid (<1hr)",     (vel["velocity_class"].str.contains("RAPID")).sum())
             v4.metric("Avg TTF",             f"{vel['ttf_hours'].median():.1f} hrs")
 
-            st.plotly_chart(plot_velocity_distribution(vel), width='content')
+            st.plotly_chart(plot_velocity_distribution(vel), width='stretch')
 
             st.markdown("**Highest Velocity Addresses**")
             show_cols = [c for c in ["address","ttf_minutes","velocity_class","velocity_score","volume_sent","pass_through_ratio"] if c in vel.columns]
             st.dataframe(
                 vel[show_cols].head(50).style.background_gradient(subset=["velocity_score"], cmap="Reds"),
-                width='content', hide_index=True
+                width='stretch', hide_index=True
             )
 
             st.download_button("⬇️ Export Velocity CSV",
@@ -1968,7 +2061,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                         st.error("networkx not installed. Run: pip install networkx")
 
         if "ng_fig" in st.session_state:
-            st.plotly_chart(st.session_state.ng_fig, width='content')
+            st.plotly_chart(st.session_state.ng_fig, width='stretch')
 
         st.markdown("**Wallet Profiler** — full forensic profile for any address")
         prof_addr = st.text_input("Address to profile", placeholder="Paste from table or graph above", key="prof_addr")
@@ -2023,7 +2116,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
         if "enriched_df" in st.session_state:
             edf = st.session_state.enriched_df
             show = [c for c in ["date","from_address","from_label","to_address","to_label","amount","token"] if c in edf.columns]
-            st.dataframe(edf[show].head(100), width='content', hide_index=True)
+            st.dataframe(edf[show].head(100), width='stretch', hide_index=True)
 
     elif page == "🔔 Alerts & Monitoring":
         render_alerts_ui(get_key_fn=get_key)
@@ -2052,19 +2145,19 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                         with st.expander(f"{r["address"][:24]}… · {r["multiplier"]}× · sev {r["severity"]}"):
                             st.caption(r["description"])
                             fig = plot_address_timeline(df, r["address"])
-                            if fig: st.plotly_chart(fig, width='content')
+                            if fig: st.plotly_chart(fig, width='stretch')
                 else: st.info("None detected.")
             with t2:
-                if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), width='content', hide_index=True)
+                if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), width='stretch', hide_index=True)
                 else: st.info("None detected.")
             with t3:
-                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), width='content', hide_index=True)
+                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), width='stretch', hide_index=True)
                 else: st.info("None detected.")
         st.divider()
         ts_a = st.text_input("Address timeline", key="ts_addr", placeholder="Paste address")
         if ts_a:
             fig = plot_address_timeline(df, ts_a)
-            if fig: st.plotly_chart(fig, width='content')
+            if fig: st.plotly_chart(fig, width='stretch')
 
 
 

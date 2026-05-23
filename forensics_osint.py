@@ -857,7 +857,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             if not hits.empty:
                 show = [c for c in ["date","from_address","to_address","amount","token",
                                      "risk_level","ofac_entity"] if c in hits.columns]
-                st.dataframe(hits[show], use_container_width=True, hide_index=True)
+                st.dataframe(hits[show], width='stretch', hide_index=True)
                 st.download_button("⬇️ Export OFAC Hits CSV",
                     hits[show].to_csv(index=False).encode(),
                     "ofac_hits.csv", "text/csv")
@@ -886,7 +886,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             if not hits.empty:
                 show = [c for c in ["date","from_address","to_address","amount","token",
                                      "ransomware_family","ransomware_paid"] if c in hits.columns]
-                st.dataframe(hits[show], use_container_width=True, hide_index=True)
+                st.dataframe(hits[show], width='stretch', hide_index=True)
 
     with osint_tabs[2]:
         st.markdown("### 💵 Historical USD Valuation")
@@ -913,7 +913,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             c2.metric("Avg Tx USD Value",   f"${udf['usd_value'].mean():,.2f}")
             c3.metric("Max Single Tx",      f"${udf['usd_value'].max():,.2f}")
             show = [c for c in ["date","from_address","to_address","amount","token","usd_value","risk_level"] if c in udf.columns]
-            st.dataframe(udf[show].head(100), use_container_width=True, hide_index=True)
+            st.dataframe(udf[show].head(100), width='stretch', hide_index=True)
             st.download_button("⬇️ Export with USD Values",
                 udf[show].to_csv(index=False).encode(), "transactions_usd.csv", "text/csv")
 
@@ -939,7 +939,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             c2.metric("EOA Wallets",     len(eoas))
             c3.metric("Known Entities",  len(res_df[res_df["type"] == "KNOWN_CONTRACT"]))
             st.dataframe(res_df[["address","type","label","source"]],
-                         use_container_width=True, hide_index=True)
+                         width='stretch', hide_index=True)
 
     with osint_tabs[4]:
         st.markdown("### 🔍 DeFi Protocol Fingerprinting")
@@ -957,18 +957,18 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             summary = get_protocol_summary(pdf)
             st.markdown("**Protocol Summary**")
             if not summary.empty:
-                st.dataframe(summary, use_container_width=True, hide_index=True)
+                st.dataframe(summary, width='stretch', hide_index=True)
             labeled = pdf[pdf["protocol"] != ""]
             st.markdown(f"**{len(labeled)} transactions touching known protocols:**")
             show = [c for c in ["date","from_address","to_address","amount","token",
                                   "protocol","protocol_risk"] if c in labeled.columns]
-            st.dataframe(labeled[show].head(200), use_container_width=True, hide_index=True)
+            st.dataframe(labeled[show].head(200), width='stretch', hide_index=True)
 
             # Flag mixer interactions
             mixer_txs = pdf[pdf.get("protocol_risk","") == "CRITICAL"] if "protocol_risk" in pdf.columns else pd.DataFrame()
             if not mixer_txs.empty:
                 st.error(f"🚨 {len(mixer_txs)} transactions with CRITICAL-risk protocols (mixers)")
-                st.dataframe(mixer_txs[show].head(50), use_container_width=True, hide_index=True)
+                st.dataframe(mixer_txs[show].head(50), width='stretch', hide_index=True)
 
     with osint_tabs[5]:
         st.markdown("### 💨 Dust Attack Detection")
@@ -985,7 +985,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             ddf = st.session_state.dust_df
             if not ddf.empty:
                 st.warning(f"⚠️ {len(ddf)} dust attack suspects found")
-                st.dataframe(ddf, use_container_width=True, hide_index=True)
+                st.dataframe(ddf, width='stretch', hide_index=True)
             else:
                 st.success("No dust attack patterns detected.")
 
@@ -1009,7 +1009,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             fdf = st.session_state.flash_df
             if not fdf.empty:
                 st.warning(f"⚠️ {len(fdf)} potential flash loan transactions")
-                st.dataframe(fdf, use_container_width=True, hide_index=True)
+                st.dataframe(fdf, width='stretch', hide_index=True)
                 st.download_button("⬇️ Export Flash Loan Report",
                     fdf.to_csv(index=False).encode(), "flash_loans.csv", "text/csv")
             else:
@@ -1042,7 +1042,7 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
         audit_log = load_audit_log()
         if not audit_log.empty:
             st.markdown(f"**{len(audit_log)} audit entries:**")
-            st.dataframe(audit_log, use_container_width=True, hide_index=True)
+            st.dataframe(audit_log, width='stretch', hide_index=True)
 
             # Evidence package
             if st.button("📦 Generate Evidence Package", type="primary", key="gen_ev"):

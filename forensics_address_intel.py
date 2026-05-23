@@ -611,7 +611,7 @@ def render_address_intel_ui(df: pd.DataFrame):
         if "cio_summary" in st.session_state:
             s = st.session_state.cio_summary
             if not s.empty:
-                st.dataframe(s, use_container_width=True, hide_index=True)
+                st.dataframe(s, width='stretch', hide_index=True)
                 st.download_button("⬇️ Export Clusters CSV",
                     s.to_csv(index=False).encode(), "entity_clusters.csv", "text/csv")
             else:
@@ -635,14 +635,14 @@ def render_address_intel_ui(df: pd.DataFrame):
             type_counts.columns = ["Type","Count"]
             c1, c2 = st.columns([1,2])
             with c1:
-                st.dataframe(type_counts, use_container_width=True, hide_index=True)
+                st.dataframe(type_counts, width='stretch', hide_index=True)
             with c2:
                 st.bar_chart(type_counts.set_index("Type")["Count"])
 
             st.markdown("**Full Classification Results**")
             show_cols = [c for c in ["address","type","label","confidence",
                                       "tx_count","out_volume","tokens_used"] if c in cdf.columns]
-            st.dataframe(cdf[show_cols], use_container_width=True, hide_index=True)
+            st.dataframe(cdf[show_cols], width='stretch', hide_index=True)
             st.download_button("⬇️ Export Classifications",
                 cdf.to_csv(index=False).encode(), "address_types.csv", "text/csv")
 
@@ -666,11 +666,11 @@ def render_address_intel_ui(df: pd.DataFrame):
                     tx_count=("amount","size"),
                     total_volume=("amount","sum")
                 ).reset_index().sort_values("total_volume", ascending=False)
-                st.dataframe(exc_summary, use_container_width=True, hide_index=True)
+                st.dataframe(exc_summary, width='stretch', hide_index=True)
 
                 show = [c for c in ["date","from_address","to_address","amount",
                                      "token","exchange_name","risk_level"] if c in edf.columns]
-                st.dataframe(edf[show], use_container_width=True, hide_index=True)
+                st.dataframe(edf[show], width='stretch', hide_index=True)
                 st.download_button("⬇️ Export Exchange Endpoints",
                     edf[show].to_csv(index=False).encode(),
                     "exchange_endpoints.csv", "text/csv")
@@ -709,7 +709,7 @@ def render_address_intel_ui(df: pd.DataFrame):
             if not hits.empty:
                 show = [c for c in ["date","from_address","to_address","amount",
                                      "token","darknet_entity","risk_level"] if c in hits.columns]
-                st.dataframe(hits[show], use_container_width=True, hide_index=True)
+                st.dataframe(hits[show], width='stretch', hide_index=True)
 
     with ai_tabs[4]:
         st.markdown("**Change Address Detection**")
@@ -727,7 +727,7 @@ def render_address_intel_ui(df: pd.DataFrame):
                 st.success("✅ No change addresses detected")
 
         if "chg_df" in st.session_state and not st.session_state.chg_df.empty:
-            st.dataframe(st.session_state.chg_df, use_container_width=True, hide_index=True)
+            st.dataframe(st.session_state.chg_df, width='stretch', hide_index=True)
             st.download_button("⬇️ Export Change Addresses",
                 st.session_state.chg_df.to_csv(index=False).encode(),
                 "change_addresses.csv", "text/csv")

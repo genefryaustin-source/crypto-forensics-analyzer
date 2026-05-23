@@ -517,7 +517,7 @@ def render_advanced_ui(df: pd.DataFrame, get_key_fn=None):
                 show = [c for c in ["pattern","token","wash_address","buy_price",
                                      "sell_price","price_change_pct","hold_hours","severity"]
                         if c in wdf.columns]
-                st.dataframe(wdf[show], use_container_width=True, hide_index=True)
+                st.dataframe(wdf[show], width='stretch', hide_index=True)
                 st.download_button("⬇️ Export Wash Trading Report",
                     wdf.to_csv(index=False).encode(), "wash_trading.csv", "text/csv")
             else:
@@ -539,7 +539,7 @@ def render_advanced_ui(df: pd.DataFrame, get_key_fn=None):
             fdf = st.session_state.farm_df
             if not fdf.empty:
                 st.warning(f"⚠️ {len(fdf)} airdrop farming suspects")
-                st.dataframe(fdf, use_container_width=True, hide_index=True)
+                st.dataframe(fdf, width='stretch', hide_index=True)
                 st.download_button("⬇️ Export Airdrop Farming",
                     fdf.to_csv(index=False).encode(), "airdrop_farming.csv", "text/csv")
             else:
@@ -579,7 +579,7 @@ def render_advanced_ui(df: pd.DataFrame, get_key_fn=None):
         if st.button("🔥 Generate Heatmap", key="run_hm"):
             fig_hm = plot_activity_heatmap(df, hm_addr.strip() or None)
             if fig_hm:
-                st.plotly_chart(fig_hm, use_container_width=True)
+                st.plotly_chart(fig_hm, width='stretch')
             else:
                 st.warning("No dated transactions found for this address.")
 
@@ -670,7 +670,7 @@ def render_advanced_ui(df: pd.DataFrame, get_key_fn=None):
                 p3.metric("Non-zero Wallets",  len(pdf[pdf["balance"] > 0]))
 
                 pdf_display = pdf[pdf["balance"] > 0].sort_values("balance", ascending=False)
-                st.dataframe(pdf_display, use_container_width=True, hide_index=True)
+                st.dataframe(pdf_display, width='stretch', hide_index=True)
                 st.download_button("⬇️ Export Portfolio",
                     pdf.to_csv(index=False).encode(), "portfolio.csv", "text/csv")
                 if not pdf_display.empty:
@@ -678,7 +678,7 @@ def render_advanced_ui(df: pd.DataFrame, get_key_fn=None):
                         px.bar(pdf_display.head(15), x="address", y="balance",
                                title="Top Wallet Balances", color="balance",
                                color_continuous_scale="Reds"),
-                        use_container_width=True
+                        width='stretch'
                     )
 
     with adv_tabs[5]:

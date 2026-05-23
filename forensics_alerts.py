@@ -274,7 +274,7 @@ def render_alerts_ui(get_key_fn=None):
         if wl:
             wl_df = pd.DataFrame(wl)
             st.dataframe(wl_df[["address","chain","label","added"]],
-                         use_container_width=True, hide_index=True)
+                         width='stretch', hide_index=True)
             if st.button("🗑️ Clear Watchlist", key="clear_wl"):
                 save_watchlist([])
                 st.rerun()
@@ -337,5 +337,5 @@ def render_alerts_ui(get_key_fn=None):
                     )
                     if log_entries:
                         alert_log.dataframe(pd.DataFrame(log_entries[:20]),
-                                            use_container_width=True, hide_index=True)
+                                            width='stretch', hide_index=True)
                     time.sleep(poll_sec)

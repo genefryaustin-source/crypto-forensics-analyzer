@@ -709,7 +709,7 @@ def render_case_notes(df: Optional[pd.DataFrame] = None):
         tags_df = pd.DataFrame([
             {"address": k, **v} for k, v in notes["address_tags"].items()
         ])
-        st.dataframe(tags_df, use_container_width=True, hide_index=True)
+        st.dataframe(tags_df, width='stretch', hide_index=True)
 
         # Export tags as CSV
         st.download_button(

@@ -353,7 +353,7 @@ def render_compliance_ui(df: Optional[pd.DataFrame] = None):
             if not large_txs.empty:
                 st.warning(f"⚠️ {len(large_txs)} transactions ≥ $10,000 detected — CTR may be required")
                 st.dataframe(large_txs[["date","from_address","to_address","amount","token"]],
-                             use_container_width=True, hide_index=True)
+                             width='stretch', hide_index=True)
                 if st.button("📋 Generate CTR Data", key="gen_ctr"):
                     ctr = generate_ctr_data(ctr_filer, ctr_ein,
                                              large_txs.to_dict("records"))
