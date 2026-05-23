@@ -54,6 +54,50 @@ except ImportError as e:
 _OPTIONAL_MISSING = []
 
 try:
+    from forensics_fullreport import render_pdf_ui as render_full_pdf_ui, generate_full_report
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_fullreport")
+    def render_full_pdf_ui(df): st.info("Add forensics_fullreport.py to your app folder.")
+    def generate_full_report(df, **kw): return None
+
+try:
+    from forensics_solana import render_solana_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_solana")
+    def render_solana_ui():
+        st.info("Add forensics_solana.py to your app folder to enable Solana support.")
+
+try:
+    from forensics_advanced2 import render_advanced2_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_advanced2")
+    def render_advanced2_ui(df, get_key_fn=None):
+        st.info("Add forensics_advanced2.py to your app folder.")
+
+try:
+    from forensics_api import render_api_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_api")
+    def render_api_ui():
+        st.info("Add forensics_api.py and run: pip install fastapi uvicorn[standard]")
+
+try:
+    from forensics_mev import render_mev_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_mev")
+    def render_mev_ui(df):
+        st.info("Add forensics_mev.py to your app folder.")
+
+try:
+    from forensics_compliance2 import render_compliance2_ui, render_case_dashboard
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_compliance2")
+    def render_compliance2_ui(df, get_key_fn=None):
+        st.info("Add forensics_compliance2.py to your app folder.")
+    def render_case_dashboard():
+        st.info("Add forensics_compliance2.py to your app folder.")
+
+try:
     from forensics_address_intel import render_address_intel_ui
 except ImportError:
     _OPTIONAL_MISSING.append("forensics_address_intel")
@@ -234,7 +278,12 @@ with st.sidebar:
         "🌐 On-chain":      ["🌐 ENS Resolution","🔔 Alerts & Monitoring"],
         "🔎 OSINT":         ["🔎 OSINT Intelligence"],
         "🏷️ Address Intel": ["🏷️ Address Intelligence"],
+        "⚔️ Market Intel":  ["⚔️ MEV & Market Manipulation"],
         "🔬 Advanced":      ["🖼 NFT & Airdrop","🌍 Geolocation","💾 Save/Restore","💼 Portfolio","📈 Price Ticker"],
+        "📋 Regulatory":    ["✈️ FATF Travel Rule","🔵 L2 Chains","🔐 Multi-sig","🔒 Privacy Coins","📊 Case Dashboard"],
+        "◎ Solana":          ["◎ Solana Analysis"],
+        "🔬 Deep Analytics": ["🌪️ Tornado Linking","🧠 GNN Clustering","⏳ Mempool Monitor","🔀 Atomic Swaps"],
+        "🔌 API":             ["🔌 REST API"],
         "📤 Reports":       ["📄 PDF Report","📤 Export & SIEM","📁 Case Notes"],
         "⚙️ Settings":      ["⚙️ Configuration"],
     }
@@ -1333,22 +1382,7 @@ if df is not None:
 
     # ── TAB 7: PDF ───────────────────────────────────────────
     elif page == '📄 PDF Report':
-        st.subheader("📄 Generate Full Investigation PDF Report")
-        include_ai = st.checkbox("Include AI analysis in PDF", value=True)
-
-        if st.button("📄 Generate PDF", type="primary"):
-            ai_text = st.session_state.get("ai_result", "") if include_ai else ""
-            with st.spinner("Building PDF report…"):
-                pdf_buf = generate_pdf(df, ai_text)
-            fname = f"crypto_forensics_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-            st.download_button(
-                label="📥 Download PDF Report",
-                data=pdf_buf.getvalue(),
-                file_name=fname,
-                mime="application/pdf",
-                type="primary"
-            )
-            st.success(f"Report ready: {fname}")
+        render_full_pdf_ui(df)
 
     # ── TAB 8: Configuration ─────────────────────────────────
     elif page == '⚙️ Configuration':
@@ -1572,29 +1606,17 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             with col_pdf2:
                 institution_pdf = st.text_input("Institution", value="Compliance Department")
 
-            if st.button("📥 Generate PDF Report", type="primary", key="pdf_export") and has_findings:
-                with st.spinner("Generating PDF report..."):
-                    pdf_bytes = export_alerts_pdf(
-                        clusters=findings["clusters"],
-                        circular_flows=findings["circular_flows"],
-                        anomalies=findings["anomalies"],
-                        mixers=findings["mixers"],
-                        case_id=case_id_pdf,
-                        investigator=investigator_pdf,
-                        df_main=df
-                    )
-
+            if st.button("📥 Generate Full Investigation PDF", type="primary", key="pdf_export"):
+                with st.spinner("Building comprehensive PDF — all analysis sections…"):
+                    pdf_buf = generate_full_report(df, case_id=case_id_pdf, analyst=investigator_pdf)
                 st.download_button(
-                    label="⬇️ Download PDF Report",
-                    data=pdf_bytes,
-                    file_name=f"forensics_alert_{case_id_pdf}.pdf",
+                    label="⬇️ Download Full Investigation Report",
+                    data=pdf_buf.getvalue(),
+                    file_name=f"investigation_{case_id_pdf}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                     mime="application/pdf",
-                    type="primary"
+                    type="primary",
                 )
-
-                st.success("✅ PDF generated successfully!")
-            elif not has_findings:
-                st.warning("⚠️ No findings detected. Run pattern analysis first.")
+                st.success("✅ Report generated — includes all analysis modules that have been run.")
 
         # ── EMAIL ALERT ─────────────────────────────────────────
         with export_tabs[3]:
@@ -2045,6 +2067,29 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             if fig: st.plotly_chart(fig, use_container_width=True)
 
 
+
+
+
+    # ── Solana ───────────────────────────────────────────
+    elif page == "◎ Solana Analysis":
+        render_solana_ui()
+
+    # ── Deep Analytics ───────────────────────────────────
+    elif page in ("🌪️ Tornado Linking","🧠 GNN Clustering","⏳ Mempool Monitor","🔀 Atomic Swaps"):
+        render_advanced2_ui(df, get_key_fn=get_key)
+
+    # ── REST API ─────────────────────────────────────────
+    elif page == "🔌 REST API":
+        render_api_ui()
+
+    # ── MEV & Market Manipulation ────────────────────────
+    elif page == "⚔️ MEV & Market Manipulation":
+        render_mev_ui(df)
+
+    # ── Regulatory pages (compliance2) ───────────────────
+    elif page in ("✈️ FATF Travel Rule","🔵 L2 Chains","🔐 Multi-sig",
+                   "🔒 Privacy Coins","🔌 Pro API Integration","📊 Case Dashboard"):
+        render_compliance2_ui(df, get_key_fn=get_key)
 
     # ── Address Intelligence ──────────────────────────────
     elif page == "🏷️ Address Intelligence":
