@@ -1292,19 +1292,19 @@ if df is not None:
                         for hop_num, txs in trace_result["forward"]["hops"].items():
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
-                                styled = hop_df.style.applymap(highlight_risk, subset=['risk_level'])
+                                styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
                                 st.dataframe(styled, width='content', hide_index=True)
                     with fwd_tabs[1]:
                         for hop_num, txs in trace_result["backward"]["hops"].items():
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
-                                styled = hop_df.style.applymap(highlight_risk, subset=['risk_level'])
+                                styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
                                 st.dataframe(styled, width='content', hide_index=True)
                 else:
                     for hop_num, txs in trace_result["hops"].items():
                         with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                             hop_df = pd.DataFrame(txs)
-                            styled = hop_df.style.applymap(highlight_risk, subset=['risk_level'])
+                            styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
                             st.dataframe(styled, width='content', hide_index=True)
 
             with result_tabs[2]:
@@ -1426,7 +1426,7 @@ if df is not None:
 
         status_df = pd.DataFrame(rows)
         st.dataframe(
-                status_df.style.applymap(
+                status_df.style.map(
                     lambda v: "color:green;font-weight:bold" if "✅" in str(v)
                               else "color:red" if "❌" in str(v) else "",
                     subset=["Status"]
