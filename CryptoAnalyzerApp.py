@@ -2329,7 +2329,12 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                         with st.expander(f"{r["address"][:24]}… · {r["multiplier"]}× · sev {r["severity"]}"):
                             st.caption(r["description"])
                             fig = plot_address_timeline(df, r["address"])
-                            if fig: st.plotly_chart(fig, width='stretch')
+                            if fig is not None:
+                                st.plotly_chart(
+                                    fig,
+                                    width='stretch',
+                                    key=f"plot_{time.time_ns()}"
+                                )
                 else: st.info("None detected.")
             with t2:
                 if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), width='stretch', hide_index=True)
