@@ -24,6 +24,40 @@ def detect_adaptive_laundering(df: pd.DataFrame, windows: List[int] = None) -> L
         windows = [7, 14, 30]
 
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).sort_values("date")
 
@@ -82,6 +116,40 @@ def detect_cyclical_patterns(df: pd.DataFrame) -> List[Dict]:
     Bots and automated systems transact at precise intervals.
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"])
 
@@ -132,6 +200,40 @@ def detect_dormant_reactivation(df: pd.DataFrame, dormant_days: int = 180) -> Li
     Common in: seized-wallet reuse, long-term money hiding, exit scams.
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"])
 
@@ -167,6 +269,40 @@ def detect_dormant_reactivation(df: pd.DataFrame, dormant_days: int = 180) -> Li
 def plot_address_timeline(df: pd.DataFrame, address: str) -> go.Figure:
     """Plot transaction volume over time for a single address."""
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     addr_lower = address.lower()
     mask = (df["from_address"].str.lower() == addr_lower) | (df["to_address"].str.lower() == addr_lower)

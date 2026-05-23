@@ -177,6 +177,40 @@ def detect_circular_flows(
     logger.info("Scanning for circular flows...")
 
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
     circular_flows = []
@@ -333,6 +367,40 @@ def detect_behavioral_anomalies(df: pd.DataFrame, lookback_pct: float = 0.33) ->
     logger.info("Scanning for behavioral anomalies...")
 
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     anomalies = []
 

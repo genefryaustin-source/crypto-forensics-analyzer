@@ -108,6 +108,40 @@ def bitcoin_common_input_ownership(df: pd.DataFrame) -> Dict[str, Set[str]]:
     Returns: {cluster_id: {address1, address2, ...}}
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     clusters = {}
@@ -338,6 +372,40 @@ def detect_exchange_endpoints(df: pd.DataFrame) -> pd.DataFrame:
     These are investigation endpoints — exchange has KYC on the recipient.
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     exchange_map = {k.lower(): v for k, v in KNOWN_EXCHANGES.items()}
 
     df["to_exchange"]    = df["to_address"].str.lower().map(exchange_map).fillna("")
@@ -400,6 +468,40 @@ def fetch_community_blacklist() -> Set[str]:
 def screen_darknet_intelligence(df: pd.DataFrame) -> pd.DataFrame:
     """Screen addresses against darknet intelligence sources."""
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
 
     # Pattern matching in address labels
     combined = (df["from_address"].astype(str) + " " + df["to_address"].astype(str)).str.lower()
@@ -435,6 +537,40 @@ def detect_change_addresses(df: pd.DataFrame) -> pd.DataFrame:
     3. Same transaction has a round-number output (the payment)
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     # Count how many times each address appears

@@ -57,6 +57,40 @@ def detect_nft_wash_trading(df: pd.DataFrame) -> pd.DataFrame:
     3. Circular NFT trades (A→B→C→A)
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).sort_values("date")
 
@@ -138,6 +172,40 @@ def detect_airdrop_farming(df: pd.DataFrame) -> pd.DataFrame:
     within 30 days, often with near-zero amounts.
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).sort_values("date")
 
@@ -211,6 +279,40 @@ def infer_timezone(df: pd.DataFrame, address: str) -> Dict:
     Returns timezone estimate and jurisdiction approximation.
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     addr_txs = df[

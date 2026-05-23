@@ -136,6 +136,40 @@ def screen_against_ofac(df: pd.DataFrame) -> pd.DataFrame:
         sdn_addrs, sdn_names = fetch_ofac_sdn_addresses()
 
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     from_lower = df["from_address"].astype(str).str.lower()
     to_lower   = df["to_address"].astype(str).str.lower()
 
@@ -200,6 +234,40 @@ def screen_against_ransomwhere(df: pd.DataFrame) -> pd.DataFrame:
         rw_addrs = fetch_ransomwhere_addresses()
 
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     from_lower = df["from_address"].astype(str).str.lower()
     to_lower   = df["to_address"].astype(str).str.lower()
 
@@ -292,6 +360,40 @@ def add_usd_values(df: pd.DataFrame, progress_cb=None) -> pd.DataFrame:
     Rate-limited to respect CoinGecko free tier (10-15 req/min).
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["usd_value"] = np.nan
 
     # First apply current prices for stablecoins instantly
@@ -478,6 +580,40 @@ DEFI_PROTOCOLS = {
 def fingerprint_defi_protocols(df: pd.DataFrame) -> pd.DataFrame:
     """Add DeFi protocol labels to all transactions."""
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
 
     def _label(addr):
         return DEFI_PROTOCOLS.get(str(addr).lower(), {})
@@ -533,6 +669,40 @@ def detect_dust_attacks(df: pd.DataFrame) -> pd.DataFrame:
     A single sender sending <dust_threshold to 10+ unique addresses is suspicious.
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     findings = []
 
     for addr in df["from_address"].unique():
@@ -588,6 +758,40 @@ def detect_flash_loans(df: pd.DataFrame) -> pd.DataFrame:
     - Or: any address labeled as flash loan provider
     """
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     findings = []
 

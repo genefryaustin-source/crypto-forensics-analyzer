@@ -487,6 +487,40 @@ OFAC_SAMPLE = [
 @st.cache_data(show_spinner=False)
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     # Drop unnamed index columns produced by some exporters
     df = df.loc[:, ~df.columns.str.match(r'^Unnamed')]
 
@@ -548,6 +582,40 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def calculate_risk_vectorized(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
 
     # Build a single lower-case combined address string per row (vectorized)
     combined = (
@@ -621,6 +689,40 @@ def calculate_risk(row):
 @st.cache_data(show_spinner=False)
 def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     if len(df) < 5:
         df['is_anomaly'] = False
         return df
@@ -650,6 +752,9 @@ def create_sankey(df, top_n=20):
         return None
 
     try:
+        df2 = df2.dropna(
+            subset=["from_address", "to_address", "amount"]
+        )
         flows = (
             df.groupby(["from_address", "to_address"])["amount"]
             .sum()

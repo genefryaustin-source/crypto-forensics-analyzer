@@ -51,6 +51,40 @@ def detect_structuring(
     """
     logger.info("Scanning for structuring patterns…")
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).sort_values("date")
 
@@ -124,6 +158,40 @@ def analyze_velocity(df: pd.DataFrame) -> pd.DataFrame:
     """
     logger.info("Calculating velocity metrics…")
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"])
 
@@ -202,6 +270,9 @@ def build_network_graph(
     import networkx as nx
 
     df2 = df[df["amount"] >= min_amount].copy()
+    df2 = df2.dropna(
+        subset=["from_address", "to_address", "amount"]
+    )
     flows = (
         df2.groupby(["from_address", "to_address"])
         .agg(total=("amount", "sum"), count=("amount", "size"),
@@ -321,9 +392,14 @@ def profile_wallet(df: pd.DataFrame, address: str) -> Dict:
     Generate a full forensic profile for a single address.
     Works on the loaded dataset — no API calls needed.
     """
-    addr_lower = address.lower()
-    outbound = df[df["from_address"].str.lower() == addr_lower]
-    inbound  = df[df["to_address"].str.lower()   == addr_lower]
+    addr_lower = str(address).lower()
+    outbound = df[
+        df["from_address"].astype(str).str.lower() == addr_lower
+        ]
+
+    inbound = df[
+        df["to_address"].astype(str).str.lower() == addr_lower
+        ]
 
     if outbound.empty and inbound.empty:
         return {"error": f"Address {address} not found in dataset."}
@@ -465,6 +541,40 @@ def detect_peeling_chains(
     """
     logger.info("Scanning for peeling chains…")
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.sort_values("date")
 
@@ -483,7 +593,12 @@ def detect_peeling_chains(
         for _ in range(20):   # Max chain depth
             # Find next outbound from current_to with similar (slightly smaller) amount
             candidates = df[
-                (df["from_address"].str.lower() == current_to.lower()) &
+                (
+                        df["from_address"]
+                        .str.lower()
+                        ==
+                        str(current_to).lower()
+                )
                 (df["amount"] <= current_amt) &
                 (df["amount"] >= current_amt * (1 - tolerance_pct))
             ]
@@ -547,6 +662,40 @@ def detect_cross_chain_hops(
         return []
 
     df = df.copy()
+    # Normalize address columns safely
+    for col in ["from_address", "to_address"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # Normalize token safely
+    if "token" in df.columns:
+        df["token"] = (
+            df["token"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+
+    # Normalize risk safely
+    if "risk_level" in df.columns:
+        df["risk_level"] = (
+            df["risk_level"]
+            .fillna("LOW")
+            .astype(str)
+            .str.upper()
+        )
+
+    # Normalize amount safely
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(
+            df["amount"],
+            errors="coerce"
+        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df[df["amount"] >= min_amount].dropna(subset=["date"])
 
