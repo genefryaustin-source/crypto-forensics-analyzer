@@ -752,11 +752,26 @@ def create_sankey(df, top_n=20):
         return None
 
     try:
+        df2 = df.copy()
+
         df2 = df2.dropna(
             subset=["from_address", "to_address", "amount"]
         )
+
+        df2["amount"] = pd.to_numeric(
+            df2["amount"],
+            errors="coerce"
+        ).fillna(0)
+
+        df2 = df2[
+            (df2["from_address"] != "") &
+            (df2["to_address"] != "") &
+            (df2["amount"] > 0)
+            ]
+
         flows = (
-            df.groupby(["from_address", "to_address"])["amount"]
+            df2.groupby(["from_address", "to_address"])["amount"]
+
             .sum()
             .reset_index()
             .nlargest(top_n, "amount")
