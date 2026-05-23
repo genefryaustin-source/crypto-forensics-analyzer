@@ -801,12 +801,25 @@ def create_sankey(df, top_n=20):
             ]
 
         flows = (
-            df2.groupby(["from_address", "to_address"])["amount"]
-
+            df2.groupby(
+                ["from_address", "to_address"],
+                as_index=False
+            )["amount"]
             .sum()
-            .reset_index()
-            .nlargest(top_n, "amount")
         )
+
+        # Remove zero/negative flows
+        flows = flows[flows["amount"] > 0]
+
+        # Remove self-references
+        flows = flows[
+            flows["from_address"].str.lower()
+            !=
+            flows["to_address"].str.lower()
+            ]
+
+        # Keep largest flows
+        flows = flows.nlargest(max(top_n, 100), "amount")
 
         if flows.empty:
             return None
