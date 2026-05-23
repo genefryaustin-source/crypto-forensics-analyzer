@@ -777,13 +777,44 @@ def create_sankey(df, top_n=100):
         # REMOVE INVALIDS
         invalid_vals = ["", "nan", "none", "null"]
 
-        df2 = df2[
-            ~df2["from_address"].str.lower().isin(invalid_vals)
-        ]
+        # Address normalization
+        address_map = {
+            "from_address": [
+                "from_address",
+                "from",
+                "sender",
+                "source"
+            ],
+            "to_address": [
+                "to_address",
+                "to",
+                "receiver",
+                "recipient",
+                "destination"
+            ]
+        }
 
-        df2 = df2[
-            ~df2["to_address"].str.lower().isin(invalid_vals)
-        ]
+        for target_col, aliases in address_map.items():
+
+            found = None
+
+            for col in df.columns:
+
+                cl = col.lower().strip()
+
+                if cl in aliases:
+                    found = col
+                    break
+
+            if found:
+                df[target_col] = (
+                    df[found]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                )
+            else:
+                df[target_col] = ""
 
         # REMOVE SELF TRANSFERS
         df2 = df2[
