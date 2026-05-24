@@ -809,6 +809,26 @@ def render_offchain_payments_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
     else:
         st.info("No off-chain payment records yet.")
 
+    # ── Fraud Database Search ─────────────────────────────────
+    # Uses the platform from the most recent payment, or lets
+    # the user pick which platform to search
+    existing_platforms = list({p["platform"] for p in payments}) if payments else []
+    search_platform = OFFCHAIN_PLATFORMS[0]
+    if existing_platforms:
+        search_platform = existing_platforms[0]
+
+    with st.expander("🔍 Search Fraud Databases for this Platform", expanded=False):
+        sel_platform = st.selectbox(
+            "Platform to search",
+            OFFCHAIN_PLATFORMS,
+            index=OFFCHAIN_PLATFORMS.index(search_platform) if search_platform in OFFCHAIN_PLATFORMS else 0,
+            key=f"fraud_platform_sel_{case_idx}",
+        )
+        # Pass the most recent payment amount as a search hint
+        hint_amount = payments[-1]["amount"] if payments else 0.0
+        hint_term   = payments[-1].get("sender_name","") if payments else ""
+        render_fraud_intelligence_panel(sel_platform, hint_amount, hint_term)
+
     st.markdown("---")
     st.markdown("**➕ Add Off-chain Payment Record**")
 
@@ -974,6 +994,293 @@ def render_evidence_gallery_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
             st.error(str(e))
 
     return cases
+
+
+
+# ─────────────────────────────────────────────────────────────
+# 8. PAYMENT PLATFORM FRAUD INTELLIGENCE
+#    Searches public fraud databases for complaints related
+#    to specific payment platforms and accounts.
+#    Sources:
+#      • CFPB Complaint Database (free REST API, no key)
+#      • BBB Scam Tracker (free, public)
+#      • Quick-link index to FBI IC3, FTC, Action Fraud
+# ─────────────────────────────────────────────────────────────
+
+# Maps each platform to its CFPB company name and search terms
+PLATFORM_CFPB_MAP = {
+    "Zelle":           {"company": "Early Warning Services, LLC", "term": "Zelle"},
+    "PayPal":          {"company": "PayPal",                       "term": "PayPal"},
+    "CashApp":         {"company": "Square",                       "term": "Cash App"},
+    "Venmo":           {"company": "PayPal",                       "term": "Venmo"},
+    "Apple Pay":       {"company": "Apple",                        "term": "Apple Pay"},
+    "Google Pay":      {"company": "Google",                       "term": "Google Pay"},
+    "Wire Transfer":   {"company": "",                             "term": "wire transfer fraud"},
+    "ACH Transfer":    {"company": "",                             "term": "ACH fraud"},
+    "Western Union":   {"company": "Western Union",                "term": "Western Union"},
+    "MoneyGram":       {"company": "MoneyGram",                    "term": "MoneyGram"},
+    "Money Order":     {"company": "",                             "term": "money order fraud"},
+    "Bank Deposit":    {"company": "",                             "term": "bank deposit fraud"},
+}
+
+# Quick reference links opened externally
+PLATFORM_FRAUD_LINKS = {
+    "Zelle":         [
+        ("CFPB — Zelle Complaints",      "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?search_term=zelle"),
+        ("BBB Scam Tracker — Zelle",     "https://www.bbb.org/scamtracker?text=zelle"),
+        ("FTC — Report Zelle Fraud",     "https://reportfraud.ftc.gov/"),
+        ("FBI IC3 — File Complaint",     "https://www.ic3.gov/"),
+    ],
+    "PayPal":        [
+        ("CFPB — PayPal Complaints",     "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?company=paypal"),
+        ("BBB Scam Tracker — PayPal",    "https://www.bbb.org/scamtracker?text=paypal"),
+        ("FTC — Report PayPal Fraud",    "https://reportfraud.ftc.gov/"),
+    ],
+    "CashApp":       [
+        ("CFPB — CashApp Complaints",    "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?search_term=cash+app"),
+        ("BBB Scam Tracker — CashApp",   "https://www.bbb.org/scamtracker?text=cash+app"),
+        ("FTC — Report CashApp Fraud",   "https://reportfraud.ftc.gov/"),
+    ],
+    "Venmo":         [
+        ("CFPB — Venmo Complaints",      "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?search_term=venmo"),
+        ("BBB Scam Tracker — Venmo",     "https://www.bbb.org/scamtracker?text=venmo"),
+    ],
+    "Wire Transfer": [
+        ("CFPB — Wire Transfer",         "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?search_term=wire+transfer+fraud"),
+        ("FBI IC3 — Wire Fraud",         "https://www.ic3.gov/"),
+        ("FinCEN — Report",              "https://www.fincen.gov/report-suspicious-activity"),
+    ],
+    "Western Union": [
+        ("CFPB — Western Union",         "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?company=western+union"),
+        ("BBB Scam Tracker",             "https://www.bbb.org/scamtracker?text=western+union"),
+        ("FTC — WU Fraud Refund",        "https://www.ftc.gov/western-union"),
+    ],
+    "MoneyGram":     [
+        ("CFPB — MoneyGram",             "https://www.consumerfinance.gov/data-research/consumer-complaints/search/?company=moneygram"),
+        ("FTC — MoneyGram Refund",       "https://www.ftc.gov/moneygram"),
+    ],
+}
+
+CFPB_API = "https://api.consumerfinance.gov/data/complaints.json"
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def search_cfpb_complaints(
+    platform:    str,
+    search_term: str = "",
+    date_from:   str = "",
+    page_size:   int = 20,
+) -> Dict:
+    """
+    Search the CFPB Consumer Complaint Database for fraud complaints
+    related to a payment platform. Free API — no key required.
+    Returns dict with total count and list of complaint records.
+    """
+    mapping  = PLATFORM_CFPB_MAP.get(platform, {})
+    company  = mapping.get("company", "")
+    base_term = mapping.get("term", platform)
+    query    = search_term.strip() or base_term
+
+    params = {
+        "search_term": query,
+        "size":        page_size,
+        "sort":        "created_date_desc",
+        "no_aggs":     "true",
+    }
+    if company:
+        params["company"] = company
+    if date_from:
+        params["date_received_min"] = date_from
+
+    try:
+        resp = requests.get(CFPB_API, params=params, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            hits = data.get("hits", {})
+            total = hits.get("total", 0)
+            # Handle both int and dict total formats
+            if isinstance(total, dict):
+                total = total.get("value", 0)
+
+            records = []
+            for h in hits.get("hits", []):
+                src = h.get("_source", {})
+                records.append({
+                    "complaint_id":      src.get("complaint_id", ""),
+                    "date_received":     src.get("date_received", "")[:10],
+                    "company":           src.get("company", ""),
+                    "product":           src.get("product", ""),
+                    "issue":             src.get("issue", ""),
+                    "sub_issue":         src.get("sub_issue", ""),
+                    "state":             src.get("state", ""),
+                    "narrative":         (src.get("complaint_what_happened", "") or "")[:300],
+                    "company_response":  src.get("company_response", ""),
+                    "timely_response":   src.get("timely", ""),
+                    "consumer_disputed": src.get("consumer_disputed", ""),
+                })
+            return {"total": total, "records": records, "source": "CFPB"}
+    except Exception as e:
+        logger.warning(f"CFPB search failed for {platform}: {e}")
+
+    return {"total": 0, "records": [], "source": "CFPB", "error": str(e) if "e" in dir() else "Request failed"}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def search_bbb_scam_tracker(
+    platform:  str,
+    search_term: str = "",
+    page_size: int = 20,
+) -> Dict:
+    """
+    Search the BBB Scam Tracker for reports mentioning the platform.
+    Free public API — no key required.
+    """
+    mapping   = PLATFORM_CFPB_MAP.get(platform, {})
+    query     = search_term.strip() or mapping.get("term", platform)
+
+    try:
+        resp = requests.get(
+            "https://www.bbb.org/scamtracker/api/lookupscams",
+            params={"query": query, "page": 1},
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; ForensicsAnalyzer/5.0)",
+                "Accept":     "application/json",
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            records = []
+            for item in (data.get("scams") or data.get("data") or [])[:page_size]:
+                records.append({
+                    "title":       item.get("title", item.get("scamType", "")),
+                    "date":        str(item.get("reportedOn", item.get("date", "")))[:10],
+                    "amount_lost": item.get("amountLost", item.get("amount", 0)),
+                    "state":       item.get("state", ""),
+                    "description": (item.get("description", item.get("body", "")) or "")[:300],
+                    "scam_type":   item.get("scamType", item.get("type", "")),
+                })
+            total = data.get("total", data.get("count", len(records)))
+            return {"total": total, "records": records, "source": "BBB Scam Tracker"}
+    except Exception as e:
+        logger.debug(f"BBB search failed for {platform}: {e}")
+
+    return {"total": 0, "records": [], "source": "BBB Scam Tracker", "error": "BBB API unavailable"}
+
+
+def render_fraud_intelligence_panel(platform: str, amount: float = 0.0, search_hint: str = ""):
+    """
+    Render the fraud database search panel for a given payment platform.
+    Called within render_offchain_payments_ui.
+    """
+    st.markdown(f"### 🔍 Fraud Intelligence — {platform}")
+    st.caption(
+        "Search public fraud complaint databases to find reports matching "
+        "this platform, account, or transaction pattern."
+    )
+
+    fi1, fi2, fi3 = st.columns(3)
+    custom_term = fi1.text_input(
+        "Search term (optional)",
+        value=search_hint,
+        key=f"fi_term_{platform}",
+        placeholder=f"e.g. {platform} scam romance fraud",
+    )
+    date_from = fi2.text_input(
+        "Complaints from date",
+        key=f"fi_date_{platform}",
+        placeholder="YYYY-MM-DD",
+    )
+    result_count = fi3.selectbox("Results", [10, 20, 50], index=1, key=f"fi_count_{platform}")
+
+    run_col1, run_col2 = st.columns(2)
+
+    # ── CFPB Search ───────────────────────────────────────────
+    if run_col1.button(f"📋 Search CFPB Database", type="primary", key=f"cfpb_search_{platform}"):
+        with st.spinner("Searching CFPB Complaint Database…"):
+            cfpb = search_cfpb_complaints(platform, custom_term, date_from, int(result_count))
+        st.session_state[f"cfpb_result_{platform}"] = cfpb
+
+    if f"cfpb_result_{platform}" in st.session_state:
+        cfpb = st.session_state[f"cfpb_result_{platform}"]
+        total = cfpb.get("total", 0)
+        records = cfpb.get("records", [])
+
+        if cfpb.get("error") and not records:
+            st.warning(f"CFPB search unavailable: {cfpb['error']}")
+        elif records:
+            st.success(f"✅ CFPB: {total:,} total complaints — showing {len(records)}")
+            cfpb_df = pd.DataFrame(records)
+            show_cols = [c for c in ["date_received","company","issue","sub_issue",
+                                      "state","narrative","company_response"]
+                         if c in cfpb_df.columns]
+            st.dataframe(cfpb_df[show_cols], width='stretch', hide_index=True)
+            st.download_button(
+                "⬇️ Export CFPB Results",
+                cfpb_df.to_csv(index=False).encode(),
+                f"cfpb_{platform.lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv",
+                key=f"dl_cfpb_{platform}",
+            )
+
+            # Narrative count note
+            narratives = cfpb_df[cfpb_df["narrative"].str.len() > 10]
+            if not narratives.empty:
+                st.caption(
+                    f"💡 {len(narratives)} complaints include consumer narratives — "
+                    "read the 'narrative' column for detailed fraud descriptions."
+                )
+        else:
+            st.info(f"No CFPB complaints found for {platform} with those search terms.")
+
+    # ── BBB Search ────────────────────────────────────────────
+    if run_col2.button(f"🛡 Search BBB Scam Tracker", type="primary", key=f"bbb_search_{platform}"):
+        with st.spinner("Searching BBB Scam Tracker…"):
+            bbb = search_bbb_scam_tracker(platform, custom_term, int(result_count))
+        st.session_state[f"bbb_result_{platform}"] = bbb
+
+    if f"bbb_result_{platform}" in st.session_state:
+        bbb = st.session_state[f"bbb_result_{platform}"]
+        total = bbb.get("total", 0)
+        records = bbb.get("records", [])
+
+        if bbb.get("error") and not records:
+            st.warning(f"BBB Scam Tracker unavailable: {bbb['error']}")
+        elif records:
+            st.success(f"✅ BBB: {total:,} scam reports — showing {len(records)}")
+            bbb_df = pd.DataFrame(records)
+            show_cols = [c for c in ["date","scam_type","amount_lost","state","description"]
+                         if c in bbb_df.columns]
+            st.dataframe(bbb_df[show_cols], width='stretch', hide_index=True)
+            st.download_button(
+                "⬇️ Export BBB Results",
+                bbb_df.to_csv(index=False).encode(),
+                f"bbb_{platform.lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv",
+                key=f"dl_bbb_{platform}",
+            )
+        else:
+            st.info(f"No BBB reports found for {platform}.")
+
+    # ── Quick reference links ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("**🔗 Additional Fraud Databases (open in browser)**")
+    links = PLATFORM_FRAUD_LINKS.get(platform, [
+        ("CFPB Complaint Database", f"https://www.consumerfinance.gov/data-research/consumer-complaints/search/?search_term={platform.replace(' ','+')}"),
+        ("BBB Scam Tracker",        f"https://www.bbb.org/scamtracker?text={platform.replace(' ','+')}"),
+        ("FBI IC3",                  "https://www.ic3.gov/"),
+        ("FTC Report Fraud",        "https://reportfraud.ftc.gov/"),
+    ])
+    link_cols = st.columns(min(4, len(links)))
+    for idx, (label, url) in enumerate(links):
+        link_cols[idx % 4].markdown(f"[{label}]({url})")
+
+    # Amount-specific note
+    if amount > 0:
+        st.caption(
+            f"💡 Search tip: Filter CFPB results by amount — complaints near "
+            f"${amount:,.2f} may indicate the same fraud ring."
+        )
 
 
 def render_case_dashboard():

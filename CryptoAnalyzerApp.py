@@ -290,7 +290,7 @@ with st.sidebar:
     for group, pages in NAV_GROUPS.items():
         st.markdown(f"**{group}**")
         for pg in pages:
-            if st.button(pg, key=f"nav_{pg}", width='stretch',
+            if st.button(pg, key=f"nav_{pg}", use_container_width=True,
                          type="primary" if st.session_state.nav_page == pg else "secondary"):
                 st.session_state.nav_page = pg
                 st.rerun()
@@ -401,9 +401,9 @@ if st.session_state.get("processed_df") is not None:
                    "trace_hops", "trace_df", "trace_summary"]:
             st.session_state.pop(_k, None)
         st.rerun()
-if st.sidebar.button("Load Sample Data (BSC/DeFi)", width='stretch'):
+if st.sidebar.button("Load Sample Data (BSC/DeFi)", use_container_width=True):
     st.session_state.sample = True
-if st.sidebar.button("Load Sample Data (Bitcoin)", width='stretch'):
+if st.sidebar.button("Load Sample Data (Bitcoin)", use_container_width=True):
     st.session_state.sample_btc = True
 
 st.sidebar.divider()
@@ -413,10 +413,10 @@ lookup_chain_select  = st.sidebar.selectbox("Chain", ["ethereum", "bsc", "polygo
 
 col_lookup1, col_lookup2 = st.sidebar.columns(2)
 with col_lookup1:
-    if st.button("🔍 Lookup", width='stretch'):
+    if st.button("🔍 Lookup", use_container_width=True):
         st.session_state.do_lookup = True
 with col_lookup2:
-    if st.button("🔗 Both Directions", width='stretch'):
+    if st.button("🔗 Both Directions", use_container_width=True):
         st.session_state.do_lookup_both = True
 
 
@@ -1531,7 +1531,7 @@ if df is not None:
 
         col_trace1, col_trace2, col_trace3 = st.columns(3)
         with col_trace1:
-            if st.button("🔍 Trace", type="primary", width='stretch') and start_addr:
+            if st.button("🔍 Trace", type="primary", use_container_width=True) and start_addr:
                 with st.spinner(f"Tracing {trace_direction.lower()} up to {max_hops} hops…"):
                     tracer = HopTracer(
                         df,
