@@ -1147,6 +1147,148 @@ def _section_geolocation(sections: list, styles) -> List:
     return elems
 
 
+
+def _section_offchain_evidence(sections: list, styles) -> List:
+    """Off-chain payment evidence and attached files from case dashboard."""
+    # Load cases from disk
+    cases_file = Path("regulatory_cases.json")
+    if not cases_file.exists():
+        return []
+    try:
+        cases = json.loads(cases_file.read_text())
+    except Exception:
+        return []
+
+    # Collect all payments and files across all cases
+    all_payments = []
+    all_files    = []
+    for case in cases:
+        cid = case.get("case_id","?")
+        for pay in case.get("offchain_payments",[]):
+            all_payments.append({**pay, "_case_id": cid})
+        for ev in case.get("evidence_files",[]):
+            all_files.append({**ev, "_case_id": cid})
+
+    if not all_payments and not all_files:
+        return []
+
+    sections.append(f"Off-chain Payment Evidence ({len(all_payments)} payments, {len(all_files)} files)")
+    elems = _next_section("Off-chain Payment Evidence", styles)
+    elems.append(Paragraph(
+        "Fiat payment records (Zelle, PayPal, CashApp, Venmo, wire transfers, etc.) "
+        "linked to this investigation. Screenshots and attachments noted below.",
+        styles["body"]))
+    elems.append(Spacer(1, 8))
+
+    # ── Payment records table ─────────────────────────────────
+    if all_payments:
+        elems += _subsection(f"Off-chain Payment Records ({len(all_payments)})", styles)
+        pay_rows = [["Case","Platform","Date","Sender","Receiver","Amount","Linked Address"]]
+        for pay in all_payments[:50]:
+            pay_rows.append([
+                pay.get("_case_id","")[:12],
+                pay.get("platform",""),
+                pay.get("payment_date",""),
+                f"{pay.get('sender_name','')} ({pay.get('sender_account','')})"[:25],
+                f"{pay.get('receiver_name','')} ({pay.get('receiver_account','')})"[:25],
+                f"${pay.get('amount',0):,.2f} {pay.get('currency','USD')}",
+                (pay.get("linked_crypto_address","") or "")[:20],
+            ])
+        cw = [0.8,0.8,0.7,1.5,1.5,1.0,1.2]
+        elems.append(_std_table(pay_rows, [w*inch for w in cw]))
+
+        # Investigator notes per payment
+        notes_present = [(p.get("_case_id"),p.get("notes")) for p in all_payments if p.get("notes")]
+        if notes_present:
+            elems.append(Spacer(1, 6))
+            elems += _subsection("Payment Investigator Notes", styles)
+            for cid, note in notes_present[:20]:
+                elems.append(Paragraph(f"[{cid}] {note}", styles["body"]))
+                elems.append(Spacer(1, 2))
+
+        # Payment descriptions
+        descs = [(p.get("_case_id"),p.get("platform"),p.get("description"))
+                 for p in all_payments if p.get("description")]
+        if descs:
+            elems.append(Spacer(1, 6))
+            elems += _subsection("Payment Descriptions / Memos", styles)
+            for cid, plat, desc in descs[:20]:
+                elems.append(Paragraph(f"[{cid} · {plat}] {desc}", styles["small"]))
+
+        # Screenshots embedded in PDF
+        screenshots = [(p.get("_case_id"), p.get("platform"),
+                        p.get("screenshot"), p.get("screenshot_name",""),
+                        p.get("screenshot_type",""))
+                       for p in all_payments
+                       if p.get("screenshot") and str(p.get("screenshot_type","")).startswith("image/")]
+        if screenshots:
+            elems.append(Spacer(1, 8))
+            elems += _subsection(f"Payment Screenshots ({len(screenshots)} attached)", styles)
+            try:
+                import base64 as _b64
+                from reportlab.platypus import Image as RLImage
+                for cid, plat, b64data, fname, ftype in screenshots[:10]:
+                    try:
+                        img_bytes = _b64.b64decode(b64data.encode())
+                        img_io    = io.BytesIO(img_bytes)
+                        rl_img    = RLImage(img_io, width=5.5*inch, height=3.5*inch, kind="proportional")
+                        caption   = Paragraph(f"{plat} screenshot — Case {cid} — {fname}", styles["small"])
+                        elems.append(caption)
+                        elems.append(rl_img)
+                        elems.append(Spacer(1, 8))
+                    except Exception as img_err:
+                        elems.append(Paragraph(f"⚠️ {fname} — could not embed: {img_err}", styles["small"]))
+            except ImportError:
+                elems.append(Paragraph("Screenshot embedding requires reportlab.", styles["small"]))
+
+    # ── Attached evidence files ───────────────────────────────
+    if all_files:
+        elems.append(Spacer(1, 8))
+        elems += _subsection(f"Attached Evidence Files ({len(all_files)})", styles)
+
+        # Image evidence embedded
+        img_files = [(f.get("_case_id"), f.get("filename",""), f.get("description",""),
+                      f.get("data",""), f.get("file_type",""))
+                     for f in all_files if str(f.get("file_type","")).startswith("image/")]
+        if img_files:
+            try:
+                import base64 as _b64
+                from reportlab.platypus import Image as RLImage
+                for cid, fname, desc, b64data, ftype in img_files[:15]:
+                    try:
+                        img_bytes = _b64.b64decode(b64data.encode())
+                        img_io    = io.BytesIO(img_bytes)
+                        rl_img    = RLImage(img_io, width=5.5*inch, height=3.5*inch, kind="proportional")
+                        caption   = Paragraph(f"Case {cid} — {fname}: {desc}", styles["small"])
+                        elems.append(caption)
+                        elems.append(rl_img)
+                        elems.append(Spacer(1, 8))
+                    except Exception as img_err:
+                        elems.append(Paragraph(f"⚠️ {fname} — {img_err}", styles["small"]))
+            except ImportError:
+                pass
+
+        # Non-image file listing
+        doc_files = [f for f in all_files if not str(f.get("file_type","")).startswith("image/")]
+        if doc_files:
+            elems += _subsection("Document Evidence Index", styles)
+            doc_rows = [["Case","Filename","Type","Size","Description","Linked Address"]]
+            for f in doc_files[:30]:
+                size_kb = f.get("size_bytes",0) / 1024
+                doc_rows.append([
+                    f.get("_case_id","")[:12],
+                    f.get("filename","")[:25],
+                    f.get("file_type","")[:15],
+                    f"{size_kb:.1f} KB",
+                    f.get("description","")[:30],
+                    (f.get("linked_address","") or "")[:18],
+                ])
+            cw = [0.8,1.3,0.9,0.6,1.5,1.4]
+            elems.append(_std_table(doc_rows, [w*inch for w in cw]))
+
+    return elems
+
+
 def generate_full_report(
     df: pd.DataFrame,
     case_id: str = "",
@@ -1208,6 +1350,7 @@ def generate_full_report(
         _section_ai(sections, styles),
         _section_sar(sections, styles),
         _section_evidence_log(sections, styles),
+        _section_offchain_evidence(sections, styles),
         _section_case_notes(sections, styles),
         _section_certificate(sections, styles),
     ]
@@ -1270,6 +1413,7 @@ def render_pdf_ui(df: pd.DataFrame):
         "SAR narrative":                _has("sar_narrative"),
         "Evidence audit log":           Path("evidence_audit_log.jsonl").exists(),
         "Case notes & tags":            Path("case_notes.json").exists(),
+        "Off-chain payment evidence":   Path("regulatory_cases.json").exists(),
         "EIP-712 certificate":          _has("certificate"),
     }
 

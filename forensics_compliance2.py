@@ -19,6 +19,9 @@ import json
 import io
 import hashlib
 import logging
+import base64
+import mimetypes
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 from pathlib import Path
@@ -637,6 +640,342 @@ def save_cases(cases: List[Dict]):
     CASES_FILE.write_text(json.dumps(cases, indent=2, default=str))
 
 
+
+# ─────────────────────────────────────────────────────────────
+# 7. OFF-CHAIN PAYMENT EVIDENCE & FILE ATTACHMENTS
+#    Documents fiat payment evidence (Zelle, PayPal, CashApp,
+#    Venmo, wire transfers, money orders) and attaches
+#    screenshots/documents directly to cases.
+#    Files stored as base64 inside the case JSON so they
+#    persist across sessions without a separate filesystem.
+# ─────────────────────────────────────────────────────────────
+
+OFFCHAIN_PLATFORMS = [
+    "Zelle", "PayPal", "CashApp", "Venmo", "Apple Pay",
+    "Google Pay", "Wire Transfer", "ACH Transfer",
+    "Money Order", "Western Union", "MoneyGram",
+    "Bank Deposit", "Check", "Other",
+]
+
+ALLOWED_EVIDENCE_TYPES = {
+    "image/png":       "🖼 PNG Image",
+    "image/jpeg":      "🖼 JPEG Image",
+    "image/jpg":       "🖼 JPEG Image",
+    "image/gif":       "🖼 GIF Image",
+    "image/webp":      "🖼 WebP Image",
+    "application/pdf": "📄 PDF Document",
+    "text/plain":      "📝 Text File",
+    "text/csv":        "📊 CSV File",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "📝 Word Document",
+}
+
+MAX_FILE_SIZE_MB = 10
+
+
+def _encode_file(file_bytes: bytes) -> str:
+    """Encode file bytes to base64 string for JSON storage."""
+    return base64.b64encode(file_bytes).decode("utf-8")
+
+
+def _decode_file(b64_str: str) -> bytes:
+    """Decode base64 string back to file bytes."""
+    return base64.b64decode(b64_str.encode("utf-8"))
+
+
+def add_offchain_payment(
+    cases:    List[Dict],
+    case_idx: int,
+    platform:       str,
+    tx_id:          str,
+    sender_name:    str,
+    sender_account: str,
+    receiver_name:  str,
+    receiver_account: str,
+    amount:         float,
+    currency:       str,
+    payment_date:   str,
+    description:    str,
+    linked_address: str,
+    linked_tx_hash: str,
+    notes:          str,
+    screenshot_bytes: Optional[bytes] = None,
+    screenshot_name:  str = "",
+    screenshot_type:  str = "",
+) -> List[Dict]:
+    """Add an off-chain payment record to a case."""
+    payment = {
+        "id":               f"pay_{uuid.uuid4().hex[:12]}",
+        "platform":         platform,
+        "transaction_id":   tx_id,
+        "sender_name":      sender_name,
+        "sender_account":   sender_account,
+        "receiver_name":    receiver_name,
+        "receiver_account": receiver_account,
+        "amount":           amount,
+        "currency":         currency,
+        "payment_date":     payment_date,
+        "description":      description,
+        "linked_crypto_address": linked_address,
+        "linked_tx_hash":   linked_tx_hash,
+        "notes":            notes,
+        "screenshot":       _encode_file(screenshot_bytes) if screenshot_bytes else None,
+        "screenshot_name":  screenshot_name,
+        "screenshot_type":  screenshot_type,
+        "added_at":         datetime.now().isoformat()[:19],
+    }
+    cases[case_idx].setdefault("offchain_payments", []).append(payment)
+    return cases
+
+
+def add_evidence_file(
+    cases:     List[Dict],
+    case_idx:  int,
+    file_bytes: bytes,
+    filename:   str,
+    file_type:  str,
+    description: str,
+    linked_address: str = "",
+) -> List[Dict]:
+    """Attach a file to a case as base64-encoded evidence."""
+    size_mb = len(file_bytes) / (1024 * 1024)
+    if size_mb > MAX_FILE_SIZE_MB:
+        raise ValueError(f"File too large ({size_mb:.1f} MB). Max {MAX_FILE_SIZE_MB} MB.")
+
+    evidence = {
+        "id":              f"ev_{uuid.uuid4().hex[:12]}",
+        "filename":        filename,
+        "file_type":       file_type,
+        "size_bytes":      len(file_bytes),
+        "data":            _encode_file(file_bytes),
+        "description":     description,
+        "linked_address":  linked_address,
+        "added_at":        datetime.now().isoformat()[:19],
+    }
+    cases[case_idx].setdefault("evidence_files", []).append(evidence)
+    return cases
+
+
+def render_offchain_payments_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
+    """
+    UI for adding and viewing off-chain payment evidence.
+    Returns updated cases list.
+    """
+    case = cases[case_idx]
+    payments = case.get("offchain_payments", [])
+
+    # ── Existing payments ─────────────────────────────────────
+    if payments:
+        st.markdown(f"**{len(payments)} off-chain payment record(s):**")
+        for pidx, pay in enumerate(payments):
+            icon = {"Zelle":"💚","PayPal":"🔵","CashApp":"💲","Venmo":"🔷",
+                    "Wire Transfer":"🏦","Apple Pay":"🍎","Google Pay":"🟡"}.get(pay["platform"],"💳")
+            with st.expander(
+                f"{icon} {pay['platform']} — ${pay['amount']:,.2f} {pay['currency']} "
+                f"| {pay['payment_date']} | {pay.get('sender_name','?')} → {pay.get('receiver_name','?')}",
+                expanded=False
+            ):
+                p1,p2,p3 = st.columns(3)
+                p1.markdown(f"**Transaction ID:** `{pay.get('transaction_id','—')}`")
+                p2.markdown(f"**Platform:** {pay['platform']}")
+                p3.markdown(f"**Amount:** ${pay['amount']:,.2f} {pay['currency']}")
+
+                p4,p5 = st.columns(2)
+                p4.markdown(f"**Sender:** {pay.get('sender_name','—')} ({pay.get('sender_account','—')})")
+                p5.markdown(f"**Receiver:** {pay.get('receiver_name','—')} ({pay.get('receiver_account','—')})")
+
+                if pay.get("linked_crypto_address"):
+                    st.markdown(f"**Linked address:** `{pay['linked_crypto_address']}`")
+                if pay.get("linked_tx_hash"):
+                    st.markdown(f"**Linked tx:** `{pay['linked_tx_hash']}`")
+                if pay.get("description"):
+                    st.markdown(f"**Description:** {pay['description']}")
+                if pay.get("notes"):
+                    st.caption(f"📝 {pay['notes']}")
+
+                # Show screenshot if present
+                if pay.get("screenshot"):
+                    try:
+                        img_bytes = _decode_file(pay["screenshot"])
+                        st.image(img_bytes, caption=pay.get("screenshot_name","Screenshot"),
+                                 width='stretch')
+                    except Exception:
+                        st.caption("⚠️ Screenshot could not be displayed")
+
+                # Delete button
+                if st.button(f"🗑 Delete payment #{pidx+1}", key=f"del_pay_{case_idx}_{pidx}"):
+                    cases[case_idx]["offchain_payments"].pop(pidx)
+                    save_cases(cases)
+                    st.rerun()
+    else:
+        st.info("No off-chain payment records yet.")
+
+    st.markdown("---")
+    st.markdown("**➕ Add Off-chain Payment Record**")
+
+    with st.form(key=f"offchain_form_{case_idx}"):
+        fa1, fa2, fa3 = st.columns(3)
+        platform     = fa1.selectbox("Platform", OFFCHAIN_PLATFORMS, key=f"plat_{case_idx}")
+        currency     = fa2.selectbox("Currency", ["USD","EUR","GBP","CAD","AUD","Other"], key=f"curr_{case_idx}")
+        payment_date = fa3.date_input("Payment Date", key=f"pdate_{case_idx}")
+
+        fb1, fb2 = st.columns(2)
+        tx_id  = fb1.text_input("Transaction / Reference ID", key=f"txid_{case_idx}",
+                                  placeholder="e.g. Zelle ref# or PayPal txn ID")
+        amount = fb2.number_input("Amount", min_value=0.0, step=0.01, key=f"amt_{case_idx}")
+
+        fc1, fc2 = st.columns(2)
+        sender_name    = fc1.text_input("Sender Full Name",    key=f"sname_{case_idx}")
+        receiver_name  = fc2.text_input("Receiver Full Name",  key=f"rname_{case_idx}")
+
+        fd1, fd2 = st.columns(2)
+        sender_account   = fd1.text_input("Sender Account / Phone / Email",   key=f"sacct_{case_idx}",
+                                           placeholder="e.g. 555-123-4567 or email@example.com")
+        receiver_account = fd2.text_input("Receiver Account / Phone / Email", key=f"racct_{case_idx}")
+
+        fe1, fe2 = st.columns(2)
+        linked_address = fe1.text_input("Linked Crypto Address (if known)", key=f"laddr_{case_idx}",
+                                         placeholder="0x… or Bitcoin address")
+        linked_tx_hash = fe2.text_input("Linked On-chain Tx Hash (if known)", key=f"ltx_{case_idx}")
+
+        description = st.text_input("Payment Description / Memo", key=f"desc_{case_idx}",
+                                     placeholder="e.g. 'For consulting services' — memo from payment app")
+        notes       = st.text_area("Investigator Notes", key=f"inotes_{case_idx}", height=70,
+                                    placeholder="e.g. Amount just under $10k — possible structuring. Sender linked to subject address.")
+
+        screenshot_file = st.file_uploader(
+            "📎 Attach Screenshot (PNG, JPG, PDF — max 10 MB)",
+            type=["png","jpg","jpeg","pdf","gif","webp"],
+            key=f"ss_{case_idx}",
+        )
+
+        submitted = st.form_submit_button("💾 Add Payment Record", type="primary")
+
+    if submitted:
+        ss_bytes = None
+        ss_name  = ""
+        ss_type  = ""
+        if screenshot_file:
+            ss_bytes = screenshot_file.read()
+            ss_name  = screenshot_file.name
+            ss_type  = screenshot_file.type or "image/png"
+
+        cases = add_offchain_payment(
+            cases, case_idx,
+            platform=platform,
+            tx_id=tx_id,
+            sender_name=sender_name,
+            sender_account=sender_account,
+            receiver_name=receiver_name,
+            receiver_account=receiver_account,
+            amount=float(amount),
+            currency=currency,
+            payment_date=str(payment_date),
+            description=description,
+            linked_address=linked_address,
+            linked_tx_hash=linked_tx_hash,
+            notes=notes,
+            screenshot_bytes=ss_bytes,
+            screenshot_name=ss_name,
+            screenshot_type=ss_type,
+        )
+        save_cases(cases)
+        st.success(f"✅ {platform} payment record added")
+        st.rerun()
+
+    return cases
+
+
+def render_evidence_gallery_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
+    """
+    UI for uploading and viewing attached evidence files.
+    Returns updated cases list.
+    """
+    case  = cases[case_idx]
+    files = case.get("evidence_files", [])
+
+    # ── Existing files ────────────────────────────────────────
+    if files:
+        st.markdown(f"**{len(files)} attached file(s):**")
+        img_files = [f for f in files if f["file_type"].startswith("image/")]
+        doc_files = [f for f in files if not f["file_type"].startswith("image/")]
+
+        # Image gallery
+        if img_files:
+            st.markdown("**📸 Screenshots & Images**")
+            cols = st.columns(min(3, len(img_files)))
+            for idx, ev in enumerate(img_files):
+                with cols[idx % 3]:
+                    try:
+                        img_bytes = _decode_file(ev["data"])
+                        st.image(img_bytes, caption=ev.get("description") or ev["filename"],
+                                 width='stretch')
+                        st.caption(f"Added: {ev['added_at'][:10]}")
+                        if ev.get("linked_address"):
+                            st.caption(f"Linked: `{ev['linked_address'][:20]}…`")
+                        # Download button
+                        st.download_button(
+                            "⬇️", img_bytes, ev["filename"],
+                            key=f"dl_img_{case_idx}_{idx}"
+                        )
+                    except Exception:
+                        st.caption(f"⚠️ {ev['filename']} — cannot display")
+
+        # Document list
+        if doc_files:
+            st.markdown("**📄 Documents**")
+            for idx, ev in enumerate(doc_files):
+                doc_icon = {"application/pdf":"📄","text/csv":"📊","text/plain":"📝"}.get(
+                    ev["file_type"],"📎")
+                dcol1, dcol2, dcol3 = st.columns([3,2,1])
+                dcol1.markdown(f"{doc_icon} **{ev['filename']}** — {ev.get('description','')}")
+                dcol2.caption(f"{ev['size_bytes']/1024:.1f} KB | {ev['added_at'][:10]}")
+                try:
+                    doc_bytes = _decode_file(ev["data"])
+                    dcol3.download_button("⬇️", doc_bytes, ev["filename"],
+                                          key=f"dl_doc_{case_idx}_{idx}")
+                except Exception:
+                    dcol3.caption("error")
+
+                if st.button(f"🗑 Remove {ev['filename']}", key=f"del_ev_{case_idx}_{idx}"):
+                    cases[case_idx]["evidence_files"].pop(idx)
+                    save_cases(cases)
+                    st.rerun()
+    else:
+        st.info("No evidence files attached yet.")
+
+    st.markdown("---")
+    st.markdown("**➕ Attach Evidence File**")
+
+    ev_file = st.file_uploader(
+        "Upload screenshot, PDF, Word doc, or CSV (max 10 MB)",
+        type=["png","jpg","jpeg","gif","webp","pdf","txt","csv","docx"],
+        key=f"ev_upload_{case_idx}",
+    )
+    ev_desc    = st.text_input("Description", key=f"ev_desc_{case_idx}",
+                                placeholder="e.g. Bank statement showing $9,500 withdrawal on Jan 15")
+    ev_address = st.text_input("Linked Crypto Address (optional)", key=f"ev_addr_{case_idx}",
+                                placeholder="0x… or Bitcoin address this evidence relates to")
+
+    if st.button("📎 Attach File", type="primary", key=f"attach_{case_idx}") and ev_file:
+        try:
+            file_bytes = ev_file.read()
+            cases = add_evidence_file(
+                cases, case_idx,
+                file_bytes=file_bytes,
+                filename=ev_file.name,
+                file_type=ev_file.type or "application/octet-stream",
+                description=ev_desc,
+                linked_address=ev_address,
+            )
+            save_cases(cases)
+            st.success(f"✅ {ev_file.name} attached to case")
+            st.rerun()
+        except ValueError as e:
+            st.error(str(e))
+
+    return cases
+
+
 def render_case_dashboard():
     """Full regulatory case management dashboard."""
     cases = load_cases()
@@ -701,6 +1040,8 @@ def render_case_dashboard():
                 "freeze_amount": 0,
                 "disposition":   "PENDING",
                 "notes":         [],
+                "offchain_payments": [],
+                "evidence_files":    [],
             }
             cases.append(new_case)
             save_cases(cases)
@@ -720,58 +1061,103 @@ def render_case_dashboard():
                 f"{priority_icon} {case['case_id']} — {case.get('name','Untitled')} {status_icon}",
                 expanded=False
             ):
-                ec1,ec2,ec3 = st.columns(3)
-                ec1.metric("Type",     case.get("type",""))
-                ec2.metric("Value",    f"${case.get('total_value',0):,.0f}")
-                ec3.metric("Analyst",  case.get("analyst",""))
+                # Case summary metrics
+                ec1,ec2,ec3,ec4 = st.columns(4)
+                ec1.metric("Type",            case.get("type",""))
+                ec2.metric("Value",           f"${case.get('total_value',0):,.0f}")
+                ec3.metric("Analyst",         case.get("analyst",""))
+                ec4.metric("Off-chain Pymts", len(case.get("offchain_payments",[])))
 
-                # Update controls
-                upd1,upd2,upd3,upd4 = st.columns(4)
-                if upd1.checkbox("SAR Filed",       value=case.get("sar_filed",False),       key=f"sar_{i}"):
-                    cases[i]["sar_filed"] = True
-                    cases[i]["sar_date"]  = datetime.now().isoformat()[:10]
-                if upd2.checkbox("LE Referral",     value=case.get("le_referral",False),     key=f"le_{i}"):
-                    cases[i]["le_referral"] = True
-                    cases[i]["le_date"]     = datetime.now().isoformat()[:10]
-                if upd3.checkbox("Assets Frozen",   value=case.get("assets_frozen",False),   key=f"frz_{i}"):
-                    cases[i]["assets_frozen"] = True
-                new_status = upd4.selectbox("Status", ["OPEN","ESCALATED","SUSPENDED","CLOSED"],
-                                             index=["OPEN","ESCALATED","SUSPENDED","CLOSED"].index(
-                                                 case.get("status","OPEN")), key=f"status_{i}")
-                cases[i]["status"] = new_status
+                # Four tabs per case
+                ctab1, ctab2, ctab3, ctab4 = st.tabs([
+                    "📋 Status", "💳 Off-chain Payments",
+                    "📎 Evidence Files", "📝 Notes"
+                ])
 
-                # LE agency
-                if case.get("le_referral"):
-                    cases[i]["le_agency"] = st.text_input(
-                        "LE Agency", value=case.get("le_agency",""), key=f"agency_{i}",
-                        placeholder="e.g. FBI Cyber Division, DOJ, USSS"
+                # ── Tab 1: Status ─────────────────────────────
+                with ctab1:
+                    upd1,upd2,upd3,upd4 = st.columns(4)
+                    if upd1.checkbox("SAR Filed",     value=case.get("sar_filed",False),   key=f"sar_{i}"):
+                        cases[i]["sar_filed"] = True
+                        cases[i]["sar_date"]  = datetime.now().isoformat()[:10]
+                    if upd2.checkbox("LE Referral",   value=case.get("le_referral",False), key=f"le_{i}"):
+                        cases[i]["le_referral"] = True
+                        cases[i]["le_date"]     = datetime.now().isoformat()[:10]
+                    if upd3.checkbox("Assets Frozen", value=case.get("assets_frozen",False),key=f"frz_{i}"):
+                        cases[i]["assets_frozen"] = True
+                    new_status = upd4.selectbox(
+                        "Status", ["OPEN","ESCALATED","SUSPENDED","CLOSED"],
+                        index=["OPEN","ESCALATED","SUSPENDED","CLOSED"].index(
+                            case.get("status","OPEN")), key=f"status_{i}"
+                    )
+                    cases[i]["status"] = new_status
+
+                    if case.get("le_referral"):
+                        cases[i]["le_agency"] = st.text_input(
+                            "LE Agency", value=case.get("le_agency",""), key=f"agency_{i}",
+                            placeholder="e.g. FBI Cyber Division, DOJ, USSS"
+                        )
+
+                    cases[i]["disposition"] = st.selectbox(
+                        "Disposition",
+                        ["PENDING","UNDER_INVESTIGATION","CHARGES_FILED","CONVICTED",
+                         "ACQUITTED","NO_CHARGES","CIVIL_SETTLEMENT","DISMISSED"],
+                        index=["PENDING","UNDER_INVESTIGATION","CHARGES_FILED","CONVICTED",
+                               "ACQUITTED","NO_CHARGES","CIVIL_SETTLEMENT","DISMISSED"].index(
+                            case.get("disposition","PENDING")
+                        ) if case.get("disposition","PENDING") in
+                            ["PENDING","UNDER_INVESTIGATION","CHARGES_FILED","CONVICTED",
+                             "ACQUITTED","NO_CHARGES","CIVIL_SETTLEMENT","DISMISSED"] else 0,
+                        key=f"disp_{i}"
                     )
 
-                # Disposition
-                cases[i]["disposition"] = st.selectbox(
-                    "Disposition",
-                    ["PENDING","UNDER_INVESTIGATION","CHARGES_FILED","CONVICTED",
-                     "ACQUITTED","NO_CHARGES","CIVIL_SETTLEMENT","DISMISSED"],
-                    index=0, key=f"disp_{i}"
-                )
+                    if st.button("💾 Save Status", key=f"save_status_{i}", type="primary"):
+                        cases[i]["updated_at"] = datetime.now().isoformat()
+                        save_cases(cases)
+                        st.success("Status saved ✅")
+                        st.rerun()
 
-                # Quick note
-                note_text = st.text_input("Add note", key=f"note_{i}",
-                                           placeholder="Quick investigation note…")
-                if st.button("💾 Save", key=f"save_{i}"):
-                    if note_text.strip():
-                        cases[i].setdefault("notes",[]).append({
-                            "timestamp": datetime.now().isoformat()[:19],
-                            "text": note_text,
-                        })
-                    cases[i]["updated_at"] = datetime.now().isoformat()
-                    save_cases(cases)
-                    st.success("Saved ✅")
-                    st.rerun()
+                # ── Tab 2: Off-chain Payments ─────────────────
+                with ctab2:
+                    st.caption(
+                        "Document Zelle, PayPal, CashApp, Venmo, wire transfers, and other "
+                        "fiat payments linked to this investigation. Attach screenshots as evidence."
+                    )
+                    cases = render_offchain_payments_ui(cases, i)
 
-                # Show notes
-                for note in case.get("notes",[])[-3:]:
-                    st.caption(f"📝 {note['timestamp']} — {note['text']}")
+                # ── Tab 3: Evidence Files ─────────────────────
+                with ctab3:
+                    st.caption(
+                        "Attach screenshots, bank statements, PDFs, and any other documentary "
+                        "evidence. Files are stored securely inside the case record."
+                    )
+                    cases = render_evidence_gallery_ui(cases, i)
+
+                # ── Tab 4: Notes ──────────────────────────────
+                with ctab4:
+                    note_text = st.text_input("Add note", key=f"note_{i}",
+                                               placeholder="Quick investigation note…")
+                    if st.button("💾 Add Note", key=f"save_{i}"):
+                        if note_text.strip():
+                            cases[i].setdefault("notes",[]).append({
+                                "timestamp": datetime.now().isoformat()[:19],
+                                "text":      note_text,
+                            })
+                            cases[i]["updated_at"] = datetime.now().isoformat()
+                            save_cases(cases)
+                            st.success("Note added ✅")
+                            st.rerun()
+
+                    all_notes = case.get("notes", [])
+                    if all_notes:
+                        for note in reversed(all_notes[-20:]):
+                            st.markdown(
+                                f"<small style='color:#94a3b8'>{note['timestamp']}</small> "
+                                f"— {note['text']}",
+                                unsafe_allow_html=True
+                            )
+                    else:
+                        st.info("No notes yet.")
 
         # Export all cases
         st.markdown("---")
