@@ -20,6 +20,18 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 
 
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
+
 # ─────────────────────────────────────────────────────────────
 # SAR NARRATIVE BUILDER
 # ─────────────────────────────────────────────────────────────
