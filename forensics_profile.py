@@ -15,6 +15,18 @@ import streamlit as st
 import requests
 import json
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from datetime import datetime
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -202,45 +214,14 @@ def collect_address_profile(
     # ── 9. Pig Butchering / Scam Patterns ─────────────────────
     pig_df = _safe_get("pig_df")
     if isinstance(pig_df, pd.DataFrame) and not pig_df.empty:
-
-        victim_series = (
-            pig_df["victim_address"]
-            if "victim_address" in pig_df.columns
-            else pd.Series("", index=pig_df.index)
-        )
-
-        scammer_series = (
-            pig_df["scammer_address"]
-            if "scammer_address" in pig_df.columns
-            else pd.Series("", index=pig_df.index)
-        )
-
         addr_pig = pig_df[
-            (
-                    victim_series
-                    .astype(str)
-                    .str.lower()
-                    == addr_lower
-            )
-            |
-            (
-                    scammer_series
-                    .astype(str)
-                    .str.lower()
-                    == addr_lower
-            )
-            ]
-
+            pig_df.get("victim_address","").str.lower() == addr_lower |
+            pig_df.get("scammer_address","").str.lower() == addr_lower
+        ] if "scammer_address" in pig_df.columns else pd.DataFrame()
         if not addr_pig.empty:
             score += 70
-
-            profile["flags"].append(
-                "🐷 Pig butchering / investment scam pattern"
-            )
-
-            profile["sections"]["scam_patterns"] = (
-                addr_pig.to_dict("records")
-            )
+            profile["flags"].append("🐷 Pig butchering / investment scam pattern")
+            profile["sections"]["scam_patterns"] = addr_pig.to_dict("records")
 
     # ── 10. DPRK / Lazarus ───────────────────────────────────
     dprk_df = _safe_get("dprk_df")
@@ -400,8 +381,8 @@ def render_profile_ui(df: pd.DataFrame, get_key_fn=None):
         if oc:
             m1,m2,m3,m4 = st.columns(4)
             m1.metric("Total Transactions",  oc.get("total_transactions",0))
-            m2.metric("Total Sent",          f"${oc.get('total_sent',0):,.2f}")
-            m3.metric("Total Received",      f"${oc.get('total_received',0):,.2f}")
+            m2.metric("Total Sent",          fmt_crypto(oc.get('total_sent',0)))
+            m3.metric("Total Received",      fmt_crypto(oc.get('total_received',0)))
             m4.metric("Counterparties",      oc.get("unique_counterparties",0))
             m5,m6,m7,m8 = st.columns(4)
             m5.metric("First Seen",          oc.get("first_seen","—"))
@@ -418,16 +399,7 @@ def render_profile_ui(df: pd.DataFrame, get_key_fn=None):
             if not addr_txs.empty:
                 show = [c for c in ["date","from_address","to_address","amount",
                                      "token","risk_level"] if c in addr_txs.columns]
-                st.dataframe(addr_txs[show].head(20), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+                st.dataframe(addr_txs[show].head(20), width='stretch', hide_index=True)
         else:
             st.info("Address not found in current dataset.")
 
@@ -491,11 +463,11 @@ def render_profile_ui(df: pd.DataFrame, get_key_fn=None):
             with c1:
                 st.markdown("**Top Recipients (sent to):**")
                 for addr, vol in list(cp.get("top_sent_to",{}).items())[:5]:
-                    st.markdown(f"`{addr[:20]}…` — ${vol:,.2f}")
+                    st.markdown(f"`{addr[:20]}…` — {fmt_crypto(vol)}")
             with c2:
                 st.markdown("**Top Senders (received from):**")
                 for addr, vol in list(cp.get("top_received_from",{}).items())[:5]:
-                    st.markdown(f"`{addr[:20]}…` — ${vol:,.2f}")
+                    st.markdown(f"`{addr[:20]}…` — {fmt_crypto(vol)}")
         else:
             st.info("No counterparty data available.")
 

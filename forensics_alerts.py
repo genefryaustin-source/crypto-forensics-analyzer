@@ -143,16 +143,55 @@ def format_alert_message(findings: Dict, case_id: str = "") -> tuple:
 # ADDRESS WATCHLIST MONITOR  (polling-based, no WebSocket needed)
 # ─────────────────────────────────────────────────────────────
 
-WATCHLIST_FILE = "watchlist.json"
+# ── Watchlist storage — SQLite if available, JSON fallback ────
+try:
+    from forensics_db import (
+        load_watchlist   as _db_load_wl,
+        add_to_watchlist as _db_add_wl,
+        remove_from_watchlist as _db_remove_wl,
+        increment_alert_count as _db_incr_alert,
+        initialize_db,
+    )
+    initialize_db()
+    _WL_DB = True
+except ImportError:
+    _WL_DB = False
+
+_WATCHLIST_FILE = "watchlist.json"
+
 
 def load_watchlist() -> List[Dict]:
+    if _WL_DB:
+        return _db_load_wl()
     try:
-        return json.loads(open(WATCHLIST_FILE).read())
+        return json.loads(open(_WATCHLIST_FILE).read())
     except Exception:
         return []
 
+
 def save_watchlist(wl: List[Dict]):
-    open(WATCHLIST_FILE, "w").write(json.dumps(wl, indent=2))
+    """Save watchlist — upserts into SQLite or writes JSON fallback."""
+    if _WL_DB:
+        # Sync: remove deleted, upsert remaining
+        from forensics_db import get_connection
+        conn = get_connection()
+        new_addrs = {str(e.get("address","")).lower() for e in wl}
+        existing  = {r[0] for r in conn.execute("SELECT address FROM watchlist").fetchall()}
+        conn.close()
+        # Remove deleted
+        for addr in existing - new_addrs:
+            _db_remove_wl(addr)
+        # Upsert all
+        for e in wl:
+            _db_add_wl(
+                str(e.get("address","")),
+                str(e.get("label","")),
+                str(e.get("chain","ethereum")),
+                str(e.get("notes",""))
+            )
+        return
+    # Fallback to JSON
+    open(_WATCHLIST_FILE, "w").write(json.dumps(wl, indent=2))
 
 def check_address_for_new_txs(
     address: str,
@@ -274,28 +313,7 @@ def render_alerts_ui(get_key_fn=None):
         if wl:
             wl_df = pd.DataFrame(wl)
             st.dataframe(wl_df[["address","chain","label","added"]],
-                         use_container_width=True,
-                         height=480,
-                         hide_index=True,
-                         column_config={
-                             "address": st.column_config.TextColumn(
-                                 "Address",
-                                 width="large"
-                             ),
-                             "type": st.column_config.TextColumn(
-                                 "Type",
-                                 width="medium"
-                             ),
-                             "label": st.column_config.TextColumn(
-                                 "Label",
-                                 width="large"
-                             ),
-                             "source": st.column_config.TextColumn(
-                                 "Source",
-                                 width="medium"
-                             ),
-                         }
-                         )
+                         width='stretch', hide_index=True)
             if st.button("🗑️ Clear Watchlist", key="clear_wl"):
                 save_watchlist([])
                 st.rerun()
@@ -358,26 +376,5 @@ def render_alerts_ui(get_key_fn=None):
                     )
                     if log_entries:
                         alert_log.dataframe(pd.DataFrame(log_entries[:20]),
-                                            use_container_width=True,
-                                            height=480,
-                                            hide_index=True,
-                                            column_config={
-                                                "address": st.column_config.TextColumn(
-                                                    "Address",
-                                                    width="large"
-                                                ),
-                                                "type": st.column_config.TextColumn(
-                                                    "Type",
-                                                    width="medium"
-                                                ),
-                                                "label": st.column_config.TextColumn(
-                                                    "Label",
-                                                    width="large"
-                                                ),
-                                                "source": st.column_config.TextColumn(
-                                                    "Source",
-                                                    width="medium"
-                                                ),
-                                            }
-                                            )
+                                            width='stretch', hide_index=True)
                     time.sleep(poll_sec)

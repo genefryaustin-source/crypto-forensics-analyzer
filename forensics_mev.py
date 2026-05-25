@@ -16,6 +16,18 @@ import streamlit as st
 import requests
 import json
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
@@ -648,7 +660,7 @@ def render_mev_ui(df: pd.DataFrame):
                 if "estimated_profit" in mdf.columns:
                     m1,m2,m3 = st.columns(3)
                     m1.metric("Total Findings",        len(mdf))
-                    m2.metric("Estimated Bot Profit",  f"${mdf['estimated_profit'].sum():,.2f}")
+                    m2.metric("Estimated Bot Profit",  fmt_crypto(mdf['estimated_profit'].sum()))
                     m3.metric("Unique Bot Addresses",  mdf.get("bot_address", pd.Series()).nunique())
 
                 # By attack type
@@ -660,28 +672,7 @@ def render_mev_ui(df: pd.DataFrame):
                 show = [c for c in ["date","attack_type","bot_address","victim_address",
                                      "token","estimated_profit","severity","confidence"]
                         if c in mdf.columns]
-                st.dataframe(mdf[show], use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+                st.dataframe(mdf[show], width='stretch', hide_index=True)
                 st.download_button("⬇️ Export MEV Report",
                     mdf.to_csv(index=False).encode(), "mev_attacks.csv", "text/csv")
             else:
@@ -711,9 +702,9 @@ def render_mev_ui(df: pd.DataFrame):
                             st.caption(row.get("evidence",""))
                             cols = st.columns(3)
                             if "amount_removed" in row:
-                                cols[0].metric("Amount Removed", f"{row['amount_removed']:,.2f}")
+                                cols[0].metric("Amount Removed", fmt_crypto(row['amount_removed']))
                             if "total_volume" in row:
-                                cols[1].metric("Total Volume",   f"{row['total_volume']:,.2f}")
+                                cols[1].metric("Total Volume",   fmt_crypto(row['total_volume']))
                             if "tx_count" in row:
                                 cols[2].metric("Transactions",   row["tx_count"])
                 st.download_button("⬇️ Export Rug Pull Report",
@@ -772,28 +763,7 @@ def render_mev_ui(df: pd.DataFrame):
                     if not honeypots.empty:
                         st.error(f"🚨 {len(honeypots)} honeypot contracts found!")
                     st.dataframe(hp_df[["address","is_honeypot","buy_tax","sell_tax","risk_level"]],
-                                 use_container_width=True,
-                                 height=480,
-                                 hide_index=True,
-                                 column_config={
-                                     "address": st.column_config.TextColumn(
-                                         "Address",
-                                         width="large"
-                                     ),
-                                     "type": st.column_config.TextColumn(
-                                         "Type",
-                                         width="medium"
-                                     ),
-                                     "label": st.column_config.TextColumn(
-                                         "Label",
-                                         width="large"
-                                     ),
-                                     "source": st.column_config.TextColumn(
-                                         "Source",
-                                         width="medium"
-                                     ),
-                                 }
-                                 )
+                                 width='stretch', hide_index=True)
                 else:
                     st.info("No 0x contract addresses found in token column.")
 
@@ -858,27 +828,6 @@ def render_mev_ui(df: pd.DataFrame):
                 st.markdown(f"- **{pat}**: {cnt} token(s)")
             cols_show = [c for c in ["pattern","token","severity","note","tx_count",
                                       "date_start","date_end"] if c in npdf.columns]
-            st.dataframe(npdf[cols_show], use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+            st.dataframe(npdf[cols_show], width='stretch', hide_index=True)
             st.download_button("⬇️ Export NFT P&D Report",
                 npdf.to_csv(index=False).encode(), "nft_pump_dump.csv", "text/csv")

@@ -143,6 +143,18 @@ def _build_styles():
 # TABLE HELPERS
 # ─────────────────────────────────────────────────────────────
 
+
+def _fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 def _std_table(data: list, col_widths: list, styles_extra: list = None) -> Table:
     """Standard table with default forensics styling."""
     base_styles = [
@@ -183,14 +195,72 @@ def _risk_col_styles(df: pd.DataFrame, col_name: str, data_start_row: int = 1) -
     return styles_extra
 
 
+# Address/hash column name fragments — these columns get auto-truncated
+_ADDR_COL_KEYWORDS = (
+    "address", "addr", "tx_hash", "hash", "pubkey",
+    "bot_addr", "victim_addr", "wallet",
+)
+
+def _truncate_addr(val: str, first: int = 12, last: int = 6) -> str:
+    """
+    Shorten a crypto address for PDF display.
+    Addresses have no spaces so ReportLab cannot wrap them — truncation
+    is the only reliable fix.
+    Result: first_N + "…" + last_M  (e.g. "1BoatSLRHtKN…TtpyT")
+    """
+    s = str(val).strip()
+    if len(s) > first + last + 3 and " " not in s:
+        return s[:first] + "…" + s[-last:]
+    return s
+
+
 def _df_to_table(df: pd.DataFrame, col_widths: list,
                  max_rows: int = 50, risk_col: str = "risk_level") -> Table:
-    """Convert a DataFrame to a formatted reportlab Table."""
+    """Convert a DataFrame to a formatted reportlab Table.
+    Address and hash columns are automatically truncated so that long
+    hex/base58 strings cannot bleed across adjacent PDF columns.
+    """
     display = df.head(max_rows).copy()
+
+    # Format floats — column-aware
+    # Crypto amount columns: full precision, no $ sign
+    # Score/ratio/usd columns: conventional numeric format
+    _CRYPTO_COL_KEYS = ("amount","volume","balance","paid","sent","received","out_volume","in_volume")
+    _USD_COL_KEYS    = ("usd","price","value","worth")
     for col in display.columns:
-        if display[col].dtype == float:
-            display[col] = display[col].apply(lambda x: f"{x:,.4f}" if abs(x) < 10000 else f"{x:,.0f}")
+        if display[col].dtype != float:
+            continue
+        col_lower = col.lower()
+        if any(k in col_lower for k in _CRYPTO_COL_KEYS):
+            display[col] = display[col].apply(_fmt_crypto)
+        elif any(k in col_lower for k in _USD_COL_KEYS):
+            display[col] = display[col].apply(
+                lambda x: f"${x:,.2f}" if pd.notna(x) and float(x)==float(x) else ""
+            )
+        else:
+            # Scores, ratios, counts etc — compact numeric
+            display[col] = display[col].apply(
+                lambda x: f"{x:,.4f}" if abs(x) < 1 else (f"{x:,.2f}" if abs(x) < 10000 else f"{x:,.0f}")
+                if pd.notna(x) and float(x)==float(x) else ""
+            )
+
     display = display.astype(str)
+
+    # Auto-truncate address / hash columns
+    for col in display.columns:
+        col_lower = col.lower()
+        is_addr_col = any(kw in col_lower for kw in _ADDR_COL_KEYWORDS)
+        if is_addr_col:
+            display[col] = display[col].apply(_truncate_addr)
+        else:
+            # Also truncate any cell value that looks like an address
+            # (long, no spaces, looks like hex or base58)
+            import re as _re
+            _addr_pat = _re.compile(r"^(0x[a-fA-F0-9]{20,}|[13bc][a-zA-Z0-9]{20,}|T[a-zA-Z0-9]{25,})$")
+            display[col] = display[col].apply(
+                lambda v: _truncate_addr(v) if _addr_pat.match(v.strip()) else v
+            )
+
     headers = [c.replace("_"," ").title() for c in display.columns]
     data = [headers] + display.values.tolist()
     risk_styles = _risk_col_styles(df.head(max_rows), risk_col)
@@ -346,7 +416,7 @@ def _cover_page(case_id: str, analyst: str, classification: str,
         ["Analyst",          analyst],
         ["Date / Time",      date_str],
         ["Total Transactions", f"{len(df):,}"],
-        ["Total Volume",     f"${total_vol:,.2f}"],
+        ["Total Volume",     _fmt_crypto(total_vol)],
         ["Critical Flags",   str(critical)],
         ["Tool Version",     "Crypto Forensics Analyzer Pro v5.0"],
         ["Report Hash",      hashlib.sha256(case_id.encode()).hexdigest()[:24]],
@@ -444,7 +514,7 @@ def _section_executive_summary(df: pd.DataFrame, sections: list, styles) -> List
 
     metrics = {
         "Transactions":   f"{len(df):,}",
-        "Total Volume":   f"${total_vol:,.2f}",
+        "Total Volume":   _fmt_crypto(total_vol),
         "Critical Flags": str(critical),
         "High Flags":     str(high),
         "ML Anomalies":   str(anomalies),
@@ -490,7 +560,7 @@ def _section_dataset(df: pd.DataFrame, sections: list, styles) -> List:
         rc = df["risk_level"].value_counts().reset_index()
         rc.columns = ["Risk Level","Count"]
         rc["Volume"] = rc["Risk Level"].apply(
-            lambda r: f"${df[df['risk_level']==r]['amount'].sum():,.2f}" if "amount" in df.columns else "—"
+            lambda r: _fmt_crypto(df[df["risk_level"]==r]["amount"].sum()) if "amount" in df.columns else "—"
         )
         rc_data = [["Risk Level","Count","Volume"]] + rc.values.tolist()
         rc_table = Table(rc_data, colWidths=[2*inch, 1*inch, 2*inch])
@@ -516,7 +586,7 @@ def _section_dataset(df: pd.DataFrame, sections: list, styles) -> List:
         if not flagged.empty:
             cols = [c for c in ["date","from_address","to_address","amount","token",
                                  "risk_level","risk_reasons"] if c in flagged.columns]
-            cw   = [0.7,1.3,1.3,0.7,0.5,0.7,1.3][:len(cols)]
+            cw   = [0.85,1.35,1.35,0.6,0.45,0.6,1.8][:len(cols)]
             elems.append(_df_to_table(flagged[cols], [w*inch for w in cw]))
             if len(df[df["risk_level"].isin(["CRITICAL","HIGH"])]) > 40:
                 elems.append(Paragraph(
@@ -539,7 +609,7 @@ def _section_ofac(sections: list, styles) -> List:
     elems.append(Spacer(1, 6))
     if not hits.empty:
         cols = [c for c in ["date","from_address","to_address","amount","token","ofac_entity","risk_level"] if c in hits.columns]
-        cw   = [0.7,1.4,1.4,0.6,0.5,1.4,0.5][:len(cols)]
+        cw   = [0.85,1.35,1.35,0.55,0.45,1.1,0.35][:len(cols)]
         elems.append(_df_to_table(hits[cols], [w*inch for w in cw]))
     return elems
 
@@ -554,8 +624,20 @@ def _section_ransomware(sections: list, styles) -> List:
     elems.append(Paragraph(status, styles["warn"] if not hits.empty else styles["body"]))
     elems.append(Spacer(1, 6))
     if not hits.empty:
-        cols = [c for c in ["date","from_address","to_address","amount","token","ransomware_family","ransomware_paid"] if c in hits.columns]
-        cw   = [0.7,1.4,1.4,0.6,0.5,1.0,0.9][:len(cols)]
+        # from_address is always the ransomware address; to_address adds little
+        # forensic value in this table and eats width — show it only if no source col
+        has_source = "ransomware_source" in hits.columns
+        if has_source:
+            cols = [c for c in ["date","from_address","amount","token",
+                                 "ransomware_family","ransomware_source","ransomware_paid"]
+                    if c in hits.columns]
+            cw   = [0.85, 1.5, 0.55, 0.45, 1.0, 1.1, 0.55][:len(cols)]
+        else:
+            cols = [c for c in ["date","from_address","to_address","amount","token",
+                                 "ransomware_family","ransomware_paid"]
+                    if c in hits.columns]
+            # With truncation active, 1.4" each is safe for addresses
+            cw   = [0.85, 1.4, 1.4, 0.55, 0.45, 1.0, 0.55][:len(cols)]
         elems.append(_df_to_table(hits[cols], [w*inch for w in cw]))
     return elems
 
@@ -620,7 +702,7 @@ def _section_mev(sections: list, styles) -> List:
     if mev is not None and isinstance(mev, pd.DataFrame) and not mev.empty:
         elems += _subsection(f"MEV / Sandwich Attacks ({len(mev)})", styles)
         cols = [c for c in ["date","attack_type","bot_address","victim_address","token","estimated_profit","severity"] if c in mev.columns]
-        cw   = [0.7,1.0,1.3,1.3,0.5,0.8,0.5][:len(cols)]
+        cw   = [0.85,0.85,1.35,1.35,0.45,0.75,0.4][:len(cols)]
         elems.append(_df_to_table(mev[cols], [w*inch for w in cw]))
         elems.append(Spacer(1,6))
 
@@ -668,7 +750,7 @@ def _section_osint(sections: list, styles) -> List:
         if not hits.empty:
             elems += _subsection(f"Darknet Intelligence ({len(hits)} hits)", styles)
             cols = [c for c in ["date","from_address","to_address","amount","darknet_entity"] if c in hits.columns]
-            cw   = [0.7,1.5,1.5,0.8,2.0][:len(cols)]
+            cw   = [0.85,1.35,1.35,0.65,2.8][:len(cols)]
             elems.append(_df_to_table(hits[cols], [w*inch for w in cw]))
             elems.append(Spacer(1,6))
 
@@ -682,7 +764,7 @@ def _section_osint(sections: list, styles) -> List:
     if flash is not None and isinstance(flash, pd.DataFrame) and not flash.empty:
         elems += _subsection(f"Flash Loan Activity ({len(flash)} transactions)", styles)
         cols = [c for c in ["date","from_address","to_address","amount","token","protocol","severity"] if c in flash.columns]
-        cw   = [0.7,1.3,1.3,0.7,0.5,1.0,0.5][:len(cols)]
+        cw   = [0.85,1.35,1.35,0.6,0.45,0.95,0.45][:len(cols)]
         elems.append(_df_to_table(flash[cols], [w*inch for w in cw]))
 
     return elems
@@ -765,7 +847,7 @@ def _section_tornado(sections: list, styles) -> List:
     elems.append(Spacer(1,6))
     cols = [c for c in ["confidence","deposit_from","withdrawal_to","denomination","token",
                           "hours_elapsed","anonymity_set_size"] if c in tc.columns]
-    cw   = [0.7,1.5,1.5,0.8,0.5,0.7,0.8][:len(cols)]
+    cw   = [0.85,1.35,1.35,0.7,0.45,0.65,0.65][:len(cols)]
     elems.append(_df_to_table(tc[cols].head(30), [w*inch for w in cw]))
     return elems
 
@@ -780,7 +862,7 @@ def _section_atomic_swaps(sections: list, styles) -> List:
     if sw is not None and isinstance(sw, pd.DataFrame) and not sw.empty:
         elems += _subsection(f"Atomic Swap / Cross-chain DEX ({len(sw)} events)", styles)
         cols = [c for c in ["date","pattern","protocol","risk","from_address","amount","token"] if c in sw.columns]
-        cw   = [0.7,1.2,1.0,0.6,1.5,0.7,0.5][:len(cols)]
+        cw   = [0.85,1.0,1.0,0.55,1.35,0.7,0.55][:len(cols)]
         elems.append(_df_to_table(sw[cols].head(25), [w*inch for w in cw]))
         elems.append(Spacer(1,6))
 
@@ -791,7 +873,7 @@ def _section_atomic_swaps(sections: list, styles) -> List:
             styles["warn"]))
         elems.append(Spacer(1,4))
         cols = [c for c in ["type","coin","from_address","to_address","amount","date"] if c in pr.columns]
-        cw   = [1.0,0.5,1.5,1.5,0.7,0.8][:len(cols)]
+        cw   = [1.0,0.55,1.35,1.35,0.7,1.05][:len(cols)]
         elems.append(_df_to_table(pr[cols].head(20), [w*inch for w in cw]))
 
     return elems
@@ -907,7 +989,7 @@ def _section_usd(sections: list, styles) -> List:
     }, 4))
     elems.append(Spacer(1,6))
     cols = [c for c in ["date","from_address","to_address","amount","token","usd_value","risk_level"] if c in usd.columns]
-    cw   = [0.7,1.3,1.3,0.7,0.5,0.9,0.6][:len(cols)]
+    cw   = [0.85,1.35,1.35,0.6,0.45,0.95,0.45][:len(cols)]
     elems.append(_df_to_table(usd[cols].nlargest(30, "usd_value"), [w*inch for w in cw]))
     return elems
 
@@ -1035,7 +1117,7 @@ def _section_travel_rule(sections: list, styles) -> List:
         styles["body"]))
     elems.append(Spacer(1, 6))
     cols = [c for c in ["date","from_address","to_address","amount","token","jurisdiction_note"] if c in required.columns]
-    cw   = [0.7,1.4,1.4,0.7,0.5,1.8][:len(cols)]
+    cw   = [0.85,1.35,1.35,0.6,0.45,2.4][:len(cols)]
     elems.append(_df_to_table(required[cols].head(30), [w*inch for w in cw]))
     # CTR check
     ctr_hits = required[required["amount"] >= 10000] if "amount" in required.columns else pd.DataFrame()
@@ -1089,9 +1171,9 @@ def _section_l2_chains(sections: list, styles) -> List:
             chain_df = chain_data["transactions"]
             if isinstance(chain_df, pd.DataFrame) and not chain_df.empty:
                 elems += _subsection(f"{chain_name.title()} — {len(chain_df)} transactions, "
-                                      f"${chain_df['amount'].sum():,.4f} {chain_data.get('native_token','ETH')} volume", styles)
+                                      f"{_fmt_crypto(chain_df['amount'].sum())} {chain_data.get('native_token','ETH')} volume", styles)
                 cols = [c for c in ["date","from_address","to_address","amount","token","tx_hash"] if c in chain_df.columns]
-                cw   = [0.7,1.5,1.5,0.7,0.5,1.0][:len(cols)]
+                cw   = [0.85,1.35,1.35,0.6,0.45,1.4][:len(cols)]
                 elems.append(_df_to_table(chain_df[cols].head(10), [w*inch for w in cw]))
                 elems.append(Spacer(1, 4))
     return elems
@@ -1117,7 +1199,7 @@ def _section_solana(sections: list, styles) -> List:
         elems.append(_df_to_table(prog_sum.head(15), cw))
         elems.append(Spacer(1, 6))
     cols = [c for c in ["date","from_address","to_address","amount","token","program_name"] if c in sol.columns]
-    cw   = [0.7,1.4,1.4,0.7,0.5,1.0][:len(cols)]
+    cw   = [0.85,1.35,1.35,0.6,0.45,1.4][:len(cols)]
     elems.append(_df_to_table(sol[cols].head(30), [w*inch for w in cw]))
     return elems
 
@@ -1194,7 +1276,7 @@ def _section_offchain_evidence(sections: list, styles) -> List:
                 f"${pay.get('amount',0):,.2f} {pay.get('currency','USD')}",
                 (pay.get("linked_crypto_address","") or "")[:20],
             ])
-        cw = [0.8,0.8,0.7,1.5,1.5,1.0,1.2]
+        cw = [0.75,0.75,0.65,1.35,1.35,0.95,0.9]
         elems.append(_std_table(pay_rows, [w*inch for w in cw]))
 
         # Investigator notes per payment
@@ -1283,7 +1365,7 @@ def _section_offchain_evidence(sections: list, styles) -> List:
                     f.get("description","")[:30],
                     (f.get("linked_address","") or "")[:18],
                 ])
-            cw = [0.8,1.3,0.9,0.6,1.5,1.4]
+            cw = [0.75,1.3,0.9,0.55,1.5,1.0]
             elems.append(_std_table(doc_rows, [w*inch for w in cw]))
 
     return elems

@@ -20,6 +20,18 @@ import streamlit as st
 import requests
 import json
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 import io
 import base64
 from datetime import datetime, timedelta
@@ -70,7 +82,7 @@ def collect_timeline_events(df: pd.DataFrame) -> List[Dict]:
             events.append({
                 "date":        row["date"],
                 "event_type":  etype,
-                "title":       f"{row.get('token','')} {row.get('amount',0):,.2f}",
+                "title":       f"{row.get('token','')} {fmt_crypto(row.get('amount',0))}",
                 "description": f"{str(row.get('from_address',''))[:16]}… → {str(row.get('to_address',''))[:16]}…",
                 "amount":      float(row.get("amount",0)),
                 "address":     str(row.get("from_address","")),
@@ -446,7 +458,7 @@ def run_agent_query(
         if "risk_level" in df.columns:
             ctx_parts.append(f"Risk distribution: {df['risk_level'].value_counts().to_dict()}")
         if "amount" in df.columns:
-            ctx_parts.append(f"Total volume: ${df['amount'].sum():,.2f}")
+            ctx_parts.append(f"Total volume: {fmt_crypto(df['amount'].sum())}")
         if "token" in df.columns:
             ctx_parts.append(f"Tokens: {', '.join(df['token'].unique().tolist()[:5])}")
         if "chain" in df.columns:
@@ -559,16 +571,7 @@ def render_timeline_ui(df: pd.DataFrame):
             "Risk":     e.get("risk_level",""),
         } for e in events if not selected_types or e["event_type"] in selected_types]
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+            st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
             st.download_button("⬇️ Export Timeline CSV",
                 pd.DataFrame(rows).to_csv(index=False).encode(),
                 "investigation_timeline.csv", "text/csv")
@@ -660,16 +663,7 @@ def render_qr_scanner_ui(df: pd.DataFrame = None):
                             st.error("🚨 This address appears in your investigation dataset!")
                             if r.get("matched_txs"):
                                 st.dataframe(pd.DataFrame(r["matched_txs"]),
-                                             use_container_width=True,
-                                             hide_index=True,
-                                             column_config={
-                                                 col: st.column_config.TextColumn(
-                                                     col,
-                                                     width="medium"
-                                                 )
-                                                 for col in df.columns
-                                             }
-                                             )
+                                             width='stretch', hide_index=True)
                     elif r.get("method") == "fallback":
                         st.warning(r["raw"])
                     else:

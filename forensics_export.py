@@ -9,6 +9,18 @@ import io
 from datetime import datetime
 from typing import Dict, List, Optional
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import (
@@ -252,7 +264,7 @@ def export_alerts_csv(
                     'Cluster ID': c.get('cluster_id'),
                     'Classification': c.get('classification'),
                     'Members': len(c.get('members', [])),
-                    'Total Volume': f"${c.get('total_volume', 0):,.2f}",
+                    'Total Volume': fmt_crypto(c.get('total_volume', 0)),
                     'Avg Risk Score': f"{c.get('avg_risk_score', 0):.1f}",
                     'Risk Level': c.get('risk_level'),
                     'Primary Token': c.get('primary_token'),
@@ -272,8 +284,8 @@ def export_alerts_csv(
                     'Cycle': ' → '.join(f.get('cycle', [])[:5]),
                     'Length': f.get('cycle_length'),
                     'Participants': f.get('participants'),
-                    'Total Volume': f"${f.get('total_volume', 0):,.2f}",
-                    'Avg per Hop': f"${f.get('avg_per_hop', 0):,.2f}",
+                    'Total Volume': fmt_crypto(f.get('total_volume', 0)),
+                    'Avg per Hop': fmt_crypto(f.get('avg_per_hop', 0)),
                     'Time Span (hours)': f"{f.get('time_span_hours', 0):.1f}",
                     'Tokens': ', '.join(f.get('tokens', [])),
                     'Critical Hops': f.get('critical_hops'),
@@ -311,7 +323,7 @@ def export_alerts_csv(
                     'Fan In': m.get('fan_in'),
                     'Fan Out': m.get('fan_out'),
                     'Reuse Ratio': f"{m.get('reuse_ratio', 0):.1%}",
-                    'Total Volume': f"${m.get('total_volume', 0):,.2f}",
+                    'Total Volume': fmt_crypto(m.get('total_volume', 0)),
                     'Transaction Count': m.get('transaction_count'),
                     'Classification': m.get('classification'),
                 }
@@ -380,7 +392,7 @@ def export_alerts_pdf(
     if df_main is not None:
         summary_data.extend([
             ["Total Transactions", str(len(df_main))],
-            ["Total Volume", f"${df_main['amount'].sum():,.2f}"],
+            ["Total Volume", fmt_crypto(df_main['amount'].sum())],
             ["Critical Risk Count", str(len(df_main[df_main['risk_level'] == 'CRITICAL']))],
         ])
 

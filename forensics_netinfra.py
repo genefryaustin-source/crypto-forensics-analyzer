@@ -21,6 +21,18 @@ import plotly.graph_objects as go
 import plotly.express as px
 import streamlit as st
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
@@ -584,7 +596,7 @@ def render_netinfra_ui(df: pd.DataFrame):
             with st.expander(
                 f"{risk_icon} Group {op['cluster_id']}: {op['wallet_count']} wallets — "
                 f"{op['likely_operator']} | {op['work_pattern']} | "
-                f"${op['total_volume']:,.2f} volume | Confidence: {op['confidence']}%",
+                f"{fmt_crypto(op['total_volume'])} volume | Confidence: {op['confidence']}%",
                 expanded=op["cluster_risk"] in ("CRITICAL","HIGH")
             ):
                 g1,g2,g3,g4 = st.columns(4)
@@ -660,28 +672,7 @@ def render_netinfra_ui(df: pd.DataFrame):
         show_cols = [c for c in ["address","infra_cluster","cluster_risk","is_bot_pattern",
                                   "peak_hour_utc","is_weekday_operator","volume_sent","tx_count"]
                      if c in ni_df.columns]
-        st.dataframe(ni_df[show_cols], use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+        st.dataframe(ni_df[show_cols], width='stretch', hide_index=True)
         st.download_button("⬇️ Export Infrastructure Clusters",
             ni_df.to_csv(index=False).encode(),
             "infrastructure_clusters.csv", "text/csv")

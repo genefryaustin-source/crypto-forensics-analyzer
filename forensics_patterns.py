@@ -7,6 +7,18 @@ For use with Crypto Forensics Analyzer Pro v5.0
 import pandas as pd
 import numpy as np
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from typing import Dict, List, Set, Tuple, Optional
 from datetime import datetime, timedelta
 from sklearn.preprocessing import StandardScaler
@@ -177,40 +189,6 @@ def detect_circular_flows(
     logger.info("Scanning for circular flows...")
 
     df = df.copy()
-    # Normalize address columns safely
-    for col in ["from_address", "to_address"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-
-    # Normalize token safely
-    if "token" in df.columns:
-        df["token"] = (
-            df["token"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-
-    # Normalize risk safely
-    if "risk_level" in df.columns:
-        df["risk_level"] = (
-            df["risk_level"]
-            .fillna("LOW")
-            .astype(str)
-            .str.upper()
-        )
-
-    # Normalize amount safely
-    if "amount" in df.columns:
-        df["amount"] = pd.to_numeric(
-            df["amount"],
-            errors="coerce"
-        ).fillna(0)
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
     circular_flows = []
@@ -367,40 +345,6 @@ def detect_behavioral_anomalies(df: pd.DataFrame, lookback_pct: float = 0.33) ->
     logger.info("Scanning for behavioral anomalies...")
 
     df = df.copy()
-    # Normalize address columns safely
-    for col in ["from_address", "to_address"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-
-    # Normalize token safely
-    if "token" in df.columns:
-        df["token"] = (
-            df["token"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-
-    # Normalize risk safely
-    if "risk_level" in df.columns:
-        df["risk_level"] = (
-            df["risk_level"]
-            .fillna("LOW")
-            .astype(str)
-            .str.upper()
-        )
-
-    # Normalize amount safely
-    if "amount" in df.columns:
-        df["amount"] = pd.to_numeric(
-            df["amount"],
-            errors="coerce"
-        ).fillna(0)
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     anomalies = []
 
@@ -429,7 +373,7 @@ def detect_behavioral_anomalies(df: pd.DataFrame, lookback_pct: float = 0.33) ->
                         'address': addr,
                         'type': 'VOLUME_SPIKE',
                         'severity': min(100, int(z_score * 20)),
-                        'detail': f"${tx['amount']:,.2f} (mean: ${early_mean:,.2f}, std: ${early_std:,.2f})",
+                        'detail': f"{fmt_crypto(tx['amount'])} (mean: {fmt_crypto(early_mean)}, std: {fmt_crypto(early_std)})",
                         'timestamp': tx['date'],
                         'tx_hash': tx['tx_hash'],
                     })

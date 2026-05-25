@@ -16,6 +16,18 @@ import streamlit as st
 import requests
 import math
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 from pathlib import Path
@@ -683,16 +695,7 @@ def render_scams_ui(df: pd.DataFrame):
                 edf = st.session_state.ent_df
                 high_ent = edf[edf["coinjoin_likely"]]
                 st.warning(f"⚠️ {len(high_ent)} transactions with high entropy (likely CoinJoin/mixing)")
-                st.dataframe(edf.head(20), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+                st.dataframe(edf.head(20), width='stretch', hide_index=True)
 
     with threat_tabs[1]:
         st.markdown("**Pig Butchering / Romance Investment Scam Detection**")
@@ -716,12 +719,12 @@ def render_scams_ui(df: pd.DataFrame):
                 icon = "🐷" if row["pattern"] == "PIG_BUTCHERING" else "📡"
                 with st.expander(
                     f"{icon} {row['pattern']} — Scammer: `{str(row['scammer_address'])[:20]}…` "
-                    f"| ${row['total_sent']:,.2f} over {row['span_days']} days | Severity {row['severity']}"
+                    f"| {fmt_crypto(row['total_sent'])} over {row['span_days']} days | Severity {row['severity']}"
                 ):
                     st.caption(row["note"])
                     c1,c2,c3,c4 = st.columns(4)
                     c1.metric("Payments",     row["payment_count"])
-                    c2.metric("Total Sent",   f"${row['total_sent']:,.2f}")
+                    c2.metric("Total Sent",   fmt_crypto(row['total_sent']))
                     c3.metric("Escalation",   f"{row.get('escalation_ratio',0):.1f}×")
                     c4.metric("Stablecoin",   "Yes 🔴" if row.get("stablecoin") else "No")
                     st.markdown(f"**Victim:** `{row['victim_address']}`")
@@ -753,28 +756,7 @@ def render_scams_ui(df: pd.DataFrame):
             ddf = st.session_state.dprk_df
             cols = [c for c in ["date","pattern","entity","from_address","to_address",
                                   "amount","token","severity","source"] if c in ddf.columns]
-            st.dataframe(ddf[cols], use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+            st.dataframe(ddf[cols], width='stretch', hide_index=True)
             st.download_button("⬇️ Export DPRK Report",
                 ddf.to_csv(index=False).encode(), "dprk_findings.csv", "text/csv")
 
@@ -798,28 +780,7 @@ def render_scams_ui(df: pd.DataFrame):
             p2p = st.session_state.p2p_df
             cols = [c for c in ["date","pattern","service","from_address","to_address",
                                   "amount","token","severity","action"] if c in p2p.columns]
-            st.dataframe(p2p[cols], use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+            st.dataframe(p2p[cols], width='stretch', hide_index=True)
             for _, row in p2p[p2p.get("severity",0) > 50].iterrows():
                 st.info(f"💡 **Action:** {row.get('action','')}")
             st.download_button("⬇️ Export P2P Report",
@@ -846,16 +807,7 @@ def render_scams_ui(df: pd.DataFrame):
             adf = st.session_state.atm_df
             cols = [c for c in ["date","pattern","operator","country","from_address",
                                   "to_address","amount","token","severity","action"] if c in adf.columns]
-            st.dataframe(adf[cols], use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+            st.dataframe(adf[cols], width='stretch', hide_index=True)
             st.markdown("**🗺 Find nearby ATMs:** [CoinATMRadar.com](https://coinatmradar.com)")
             st.download_button("⬇️ Export ATM Report",
                 adf.to_csv(index=False).encode(), "atm_findings.csv", "text/csv")

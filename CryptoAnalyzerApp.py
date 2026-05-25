@@ -53,12 +53,47 @@ except ImportError as e:
 #    disables only that feature instead of crashing the whole app ──
 _OPTIONAL_MISSING = []
 
+# ─────────────────────────────────────────────────────────────
+# CRYPTO AMOUNT FORMATTING
+#   Crypto amounts are NOT fiat currency — must never show $
+#   signs or be rounded to 2 decimal places.
+#   Full precision: 0.00001634 stays '0.00001634'.
+# ─────────────────────────────────────────────────────────────
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount, no currency symbol, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v is None:
+            return "0"
+        if v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
+def fmt_usd(x) -> str:
+    """Confirmed USD/fiat value with dollar sign and 2 decimal places."""
+    try:
+        return f"${float(x):,.2f}"
+    except (ValueError, TypeError):
+        return str(x)
+
+
+
 try:
     from forensics_fullreport import render_pdf_ui as render_full_pdf_ui, generate_full_report
 except ImportError:
     _OPTIONAL_MISSING.append("forensics_fullreport")
     def render_full_pdf_ui(df): st.info("Add forensics_fullreport.py to your app folder.")
     def generate_full_report(df, **kw): return None
+
+try:
+    from forensics_db import initialize_db, render_db_sidebar, migrate_from_json
+    initialize_db()
+    migrate_from_json()
+except ImportError:
+    def render_db_sidebar(): pass
 
 try:
     from forensics_help import render_help_ui, render_sidebar_help
@@ -371,6 +406,7 @@ with st.sidebar:
         "⚙️ Settings":      ["⚙️ Configuration"],
     }
     render_sidebar_help()
+    render_db_sidebar()
     st.sidebar.markdown("---")
 
     for group, pages in NAV_GROUPS.items():
@@ -977,7 +1013,7 @@ def create_sankey(df, top_n=100):
         link_hover = [
             f"{node_labels[node_idx[r['from_address']]]} → "
             f"{node_labels[node_idx[r['to_address']]]}<br>"
-            f"${r['amount']:,.2f}"
+            f"{fmt_crypto(r['amount'])}"
             for _, r in flows.iterrows()
         ]
 
@@ -988,7 +1024,7 @@ def create_sankey(df, top_n=100):
             node_vol[r["to_address"]]   = node_vol.get(r["to_address"],   0) + r["amount"]
 
         node_hover = [
-            f"{node_labels[i]}<br>Risk: {risk_map.get(n,'LOW')}<br>Volume: ${node_vol.get(n,0):,.2f}"
+            f"{node_labels[i]}<br>Risk: {risk_map.get(n,'LOW')}<br>Volume: {fmt_crypto(node_vol.get(n,0))}"
             for i, n in enumerate(all_nodes)
         ]
 
@@ -1066,7 +1102,7 @@ def run_claude_analysis(df, api_key, extra_context=""):
 TRANSACTION SUMMARY
 ===================
 Total transactions: {len(df)}
-Total volume: ${total_vol:,.2f}
+Total volume: {fmt_crypto(total_vol)}
 Chains: {', '.join(str(c) for c in chains)}
 Tokens: {', '.join(str(t) for t in tokens)}
 Critical-risk transactions: {len(critical)}
@@ -1160,7 +1196,7 @@ def generate_pdf(df, ai_analysis=""):
     summary_data = [
         ["Metric", "Value"],
         ["Total Transactions",     str(len(df))],
-        ["Total Volume",           f"${total_vol:,.2f}"],
+        ["Total Volume",           fmt_crypto(total_vol)],
         ["Unique Chains",          str(df['chain'].nunique())],
         ["Unique Tokens",          str(df['token'].nunique())],
         ["CRITICAL Risk",          str(critical)],
@@ -1189,7 +1225,7 @@ def generate_pdf(df, ai_analysis=""):
     cols = ['date', 'from_address', 'to_address', 'amount', 'token', 'risk_level', 'risk_score']
     cols = [c for c in cols if c in df.columns]
     display_df = df[cols].head(40).copy()
-    display_df['amount'] = display_df['amount'].apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "")
+    display_df['amount'] = display_df['amount'].apply(lambda x: fmt_crypto(x) if pd.notna(x) else "")
     display_df['date']   = display_df['date'].astype(str).str[:10]
 
     col_headers = [c.replace('_', ' ').title() for c in cols]
@@ -1239,7 +1275,7 @@ def generate_pdf(df, ai_analysis=""):
         color = colors.HexColor("#ff4444") if lvl == "CRITICAL" else colors.HexColor("#ff8800")
         elements.append(Paragraph(
             f'<font color="#{color.hexval()[2:]}" size="9"><b>[{lvl}] Score {score}/100</b></font> — '
-            f'{frm} → {to} | ${amt:,.2f} | {rsn}',
+            f'{frm} → {to} | {fmt_crypto(amt)} | {rsn}',
             body_style
         ))
 
@@ -1333,7 +1369,7 @@ if (st.session_state.get("do_lookup") or st.session_state.get("do_lookup_both"))
                 all_txs = pd.concat([result['native_txs'], result['token_txs']], ignore_index=True)
 
                 if not all_txs.empty:
-                    st.dataframe(all_txs.head(5000), width='stretch')
+                    st.dataframe(all_txs.head(5000), use_container_width=True, hide_index=True, column_config={col: st.column_config.TextColumn(col, width="medium") for col in (all_txs).columns})
 
                     if st.button("➕ Add to dataset"):
                         if "loaded_data" not in st.session_state:
@@ -1419,7 +1455,19 @@ if "processed_df" not in st.session_state and "raw_df" in st.session_state:
 # ── All pages read from session_state — never None after first load ──
 df = st.session_state.get("processed_df", None)
 
-if df is not None:
+# Pages that are always accessible — no dataset required
+_ALWAYS_ACCESSIBLE_PAGES = {
+    "📊 Case Dashboard",
+    "📖 Help & Guide",
+    "⚙️ Configuration",
+}
+
+if df is not None or st.session_state.get("nav_page","") in _ALWAYS_ACCESSIBLE_PAGES:
+    # Use empty DataFrame for always-accessible pages when no data loaded
+    if df is None:
+        df = pd.DataFrame()
+
+if df is not None and not df.empty or st.session_state.get("nav_page","") in _ALWAYS_ACCESSIBLE_PAGES:
     st.caption(
         f"✅ {len(df):,} transactions loaded · "
         f"🔴 {(df['risk_level']=='CRITICAL').sum()} critical · "
@@ -1445,7 +1493,7 @@ if df is not None:
     if page == '📊 Overview':
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Total Transactions", len(df))
-        c2.metric("Total Volume",       f"${df['amount'].sum():,.2f}")
+        c2.metric("Total Volume",       fmt_crypto(df['amount'].sum()))
         c3.metric("Critical",           len(df[df['risk_level'] == 'CRITICAL']),
                   delta="⚠️ flags" if len(df[df['risk_level'] == 'CRITICAL']) else None,
                   delta_color="inverse")
@@ -1462,7 +1510,7 @@ if df is not None:
                              color_discrete_map={"CRITICAL":"#ff4444","HIGH":"#ff8800",
                                                  "MEDIUM":"#ffcc00","LOW":"#22c55e"})
             fig_pie.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_pie, width='stretch')
+            st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_b:
             st.markdown("**Volume by Token**")
@@ -1470,7 +1518,7 @@ if df is not None:
             fig_bar = px.bar(vol_token, x='token', y='amount',
                              color='amount', color_continuous_scale='Reds')
             fig_bar.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_bar, width='stretch')
+            st.plotly_chart(fig_bar, use_container_width=True)
 
         # Top flagged addresses
         st.markdown("**Top Flagged Addresses**")
@@ -1478,7 +1526,7 @@ if df is not None:
             df[['from_address','risk_score']].rename(columns={'from_address':'address'}),
             df[['to_address','risk_score']].rename(columns={'to_address':'address'})
         ]).groupby('address')['risk_score'].max().reset_index().nlargest(10, 'risk_score')
-        st.dataframe(addr_risk, width='stretch', hide_index=True)
+        st.dataframe(addr_risk, use_container_width=True, hide_index=True)
 
     # ── TAB 2: Transactions ──────────────────────────────────
     elif page == '📋 Transactions':
@@ -1524,9 +1572,9 @@ if df is not None:
         # Only style the page slice — styling 15k rows at once is slow
         styled = page_df[display_cols].style.map(
             highlight_risk, subset=['risk_level']
-        ).format({'amount': '${:,.2f}', 'risk_score': '{:.0f}'})
+        ).format({'amount': '{:.10g}', 'risk_score': '{:.0f}'})
 
-        st.dataframe(styled, width='stretch', height=480)
+        st.dataframe(styled, use_container_width=True, height=480)
         st.caption(
                 f"Showing rows {start+1}–{min(end, len(filtered))} "
                 f"of {len(filtered):,} filtered  |  {len(df):,} total  |  "
@@ -1573,8 +1621,7 @@ if df is not None:
         if "sankey_fig" in st.session_state:
             try:
                 st.plotly_chart(
-                    st.session_state.sankey_fig,
-                    use_container_width=True,
+                    st.session_state.sankey_fig, use_container_width=True,
                     config={"displayModeBar": True, "scrollZoom": False},
                 )
             except Exception as e:
@@ -1656,23 +1703,23 @@ if df is not None:
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, width='stretch', hide_index=True)
+                                st.dataframe(styled, use_container_width=True, hide_index=True)
                     with fwd_tabs[1]:
                         for hop_num, txs in trace_result["backward"]["hops"].items():
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, width='stretch', hide_index=True)
+                                st.dataframe(styled, use_container_width=True, hide_index=True)
                 else:
                     for hop_num, txs in trace_result["hops"].items():
                         with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                             hop_df = pd.DataFrame(txs)
                             styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                            st.dataframe(styled, width='stretch', hide_index=True)
+                            st.dataframe(styled, use_container_width=True, hide_index=True)
 
             with result_tabs[2]:
                 addr_summary = tracer.get_address_risk_summary(trace_result)
-                st.dataframe(addr_summary, width='stretch')
+                st.dataframe(addr_summary, use_container_width=True, hide_index=True, column_config={col: st.column_config.TextColumn(col, width="medium") for col in (addr_summary).columns})
 
             with result_tabs[3]:
                 # Create Sankey from trace
@@ -1688,7 +1735,7 @@ if df is not None:
                     trace_df = pd.DataFrame(all_txs_list)
                     fig_trace = create_sankey(trace_df, top_n=50)
                     if fig_trace:
-                        st.plotly_chart(fig_trace, width='stretch')
+                        st.plotly_chart(fig_trace, use_container_width=True)
 
     # ── TAB 6: AI Analysis ───────────────────────────────────
     elif page == '🤖 Claude AI':
@@ -1799,7 +1846,7 @@ if df is not None:
                               else "color:red" if "❌" in str(v) else "",
                     subset=["Status"]
                 ),
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
         )
 
@@ -1860,7 +1907,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
         st.markdown('### 📂 Current Dataset')
         _dc1, _dc2, _dc3, _dc4 = st.columns(4)
         _dc1.metric('Transactions',     len(df))
-        _dc2.metric('Total Volume',     f"${df['amount'].sum():,.2f}")
+        _dc2.metric('Total Volume',     fmt_crypto(df['amount'].sum()))
         _dc3.metric('Unique Addresses', len(set(df['from_address'].tolist() + df['to_address'].tolist())))
         _dc4.metric('Chains',           df['chain'].nunique())
         if df['date'].notna().any():
@@ -2196,7 +2243,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             with pt1:
                 st.caption("Wallets grouped by similar transaction behavior — may indicate coordinated activity, bot networks, or exchange sweepers.")
                 for c in res["clusters"][:10]:
-                    with st.expander(f"{c['classification']} · {c['member_count']} wallets · ${c['total_volume']:,.0f} volume"):
+                    with st.expander(f"{c['classification']} · {c['member_count']} wallets · {fmt_crypto(c['total_volume'])} olume"):
                         c2a, c2b = st.columns(2)
                         c2a.metric("Avg Risk Score",     f"{c.get('avg_risk_score',0):.0f}/100")
                         c2b.metric("Intra-cluster txs",  f"{c.get('intra_cluster_ratio',0):.0%}")
@@ -2209,10 +2256,10 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["circular"]:
                     for f in res["circular"][:15]:
                         label = classify_circular_flow(f)
-                        with st.expander(f"{label} · {f['cycle_length']}-hop · ${f['total_volume']:,.0f} · severity {f['severity_score']:.0f}"):
+                        with st.expander(f"{label} · {f['cycle_length']}-hop · {fmt_crypto(f['total_volume'])} · severity {f['severity_score']:.0f}"):
                             st.markdown(" → ".join(str(a)[:16]+"…" for a in f.get("cycle",[])))
                             ci1,ci2,ci3 = st.columns(3)
-                            ci1.metric("Volume",     f"${f['total_volume']:,.2f}")
+                            ci1.metric("Volume",     fmt_crypto(f['total_volume']))
                             ci2.metric("Time span",  f"{f['time_span_hours']:.1f} hrs")
                             ci3.metric("Tokens",     ", ".join(f.get("tokens",[])))
                 else:
@@ -2223,7 +2270,8 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["anomalies"]:
                     anom_df = pd.DataFrame(res["anomalies"][:50])
                     st.dataframe(anom_df[["address","type","severity","detail","tx_hash"]],
-                                 width='stretch', hide_index=True)
+                                 use_container_width=True, hide_index=True,
+                                 column_config={col: st.column_config.TextColumn(col, width="medium") for col in anom_df[["address","type","severity","detail","tx_hash"]].columns})
                 else:
                     st.info("No behavioral anomalies detected.")
 
@@ -2240,11 +2288,11 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 st.caption("Transactions broken into amounts just below reporting thresholds — FATF Typology #3.")
                 if res["structuring"]:
                     for s in res["structuring"][:10]:
-                        with st.expander(f"🚨 {s['address'][:20]}… · {s['tx_count']} txs · ${s['total_amount']:,.0f} {s['token']} · severity {s['severity']}"):
+                        with st.expander(f"🚨 {s['address'][:20]}… · {s['tx_count']} txs · {fmt_crypto(s['total_amount'])} {s['token']} · severity {s['severity']}"):
                             si1,si2,si3 = st.columns(3)
                             si1.metric("Threshold",    f"${s['threshold']:,.0f}")
                             si2.metric("Window",       f"{s['time_window_hrs']:.1f} hrs")
-                            si3.metric("Avg Tx",       f"${s['avg_amount']:,.0f}")
+                            si3.metric("Avg Tx",       fmt_crypto(s['avg_amount']))
                             st.caption(s["fatf_ref"])
                 else:
                     st.info("No structuring detected with current settings.")
@@ -2254,7 +2302,8 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["peeling"]:
                     peel_df = pd.DataFrame(res["peeling"])
                     st.dataframe(peel_df[["chain_length","start_address","end_address","start_amount","end_amount","peel_pct","severity"]],
-                                 use_container_width=True, hide_index=True)
+                                 use_container_width=True, hide_index=True,
+                                 column_config={col: st.column_config.TextColumn(col, width="medium") for col in peel_df[["chain_length","start_address","end_address","start_amount","end_amount","peel_pct","severity"]].columns})
                 else:
                     st.info("No peeling chains detected.")
 
@@ -2263,7 +2312,8 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["cross_chain"]:
                     cc_df = pd.DataFrame(res["cross_chain"])
                     st.dataframe(cc_df[["chain_from","chain_to","amount","delta_hours","token_a","token_b","address_from"]],
-                                 use_container_width=True, hide_index=True)
+                                 use_container_width=True, hide_index=True,
+                                 column_config={col: st.column_config.TextColumn(col, width="medium") for col in cc_df[["chain_from","chain_to","amount","delta_hours","token_a","token_b","address_from"]].columns})
                 else:
                     st.info("No cross-chain hops detected (requires multi-chain dataset).")
 
@@ -2422,8 +2472,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                             fig = plot_address_timeline(df, r["address"])
                             if fig is not None:
                                 st.plotly_chart(
-                                    fig,
-                                    use_container_width=True,
+                                    fig, use_container_width=True,
                                     key=f"plot_{time.time_ns()}"
                                 )
                 else: st.info("None detected.")
@@ -2431,7 +2480,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), use_container_width=True, hide_index=True)
                 else: st.info("None detected.")
             with t3:
-                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), use_container_width=True, hide_index=True)
+                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), use_container_width=True, hide_index=True, column_config={col: st.column_config.TextColumn(col, width="medium") for col in pd.DataFrame(ts["dorm"]).columns})
                 else: st.info("None detected.")
         st.divider()
         ts_a = st.text_input("Address timeline", key="ts_addr", placeholder="Paste address")
@@ -2543,15 +2592,158 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
         render_osint_ui(df, get_key_fn=get_key)
 
 else:
-    st.info(
-        "👆 Upload a CSV file, click **Load Sample Data** in the sidebar, "
-        "or enter a wallet address in the **On-chain Lookup** section to begin."
-    )
-    st.markdown("### Expected CSV columns")
-    st.code("date, from_address, to_address, amount, token, tx_hash, chain", language="text")
-    st.markdown(
-        "All columns optional — auto-detected from Etherscan, BscScan, "
-        "Chainalysis, and manual exports."
-    )
+    # ── LANDING PAGE — shown when no data is loaded ──────────
+    page_no_data = st.session_state.get("nav_page", "")
+
+    # Always-accessible pages work without a loaded dataset
+    if page_no_data == "📊 Case Dashboard":
+        st.markdown("## 📊 Case Dashboard")
+        st.divider()
+        try:
+            render_case_dashboard()
+        except Exception as _e:
+            st.error(f"Case dashboard error: {_e}")
+
+    elif page_no_data == "📖 Help & Guide":
+        st.markdown("## 📖 Help & Guide")
+        st.divider()
+        render_help_ui()
+
+    elif page_no_data == "⚙️ Configuration":
+        st.markdown("## ⚙️ Configuration")
+        st.divider()
+        st.info("Configure API keys using the sidebar.")
+
+    else:
+        # ── Welcome landing page ──────────────────────────────
+        st.markdown("""
+<div style='background:linear-gradient(135deg,#0f172a,#1e293b);
+            border:1px solid #334155;border-radius:12px;
+            padding:32px;text-align:center;margin-bottom:24px'>
+    <h1 style='margin:0;font-size:32px;font-weight:900;color:white'>
+        🔍 Crypto Forensics Analyzer Pro
+    </h1>
+    <p style='margin:10px 0 0;color:#94a3b8;font-size:15px'>
+        v5.0 · Blockchain Investigation Platform · For authorized investigative use only
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+        # Three paths
+        lp1, lp2, lp3 = st.columns(3)
+        lp1.markdown("""<div style='background:#1e293b;border:1px solid #334155;
+            border-radius:10px;padding:20px;text-align:center'>
+            <div style='font-size:32px'>📂</div>
+            <h3 style='color:white;margin:8px 0 4px'>Upload CSV</h3>
+            <p style='color:#94a3b8;font-size:13px'>Upload a transaction export file</p>
+            </div>""", unsafe_allow_html=True)
+        lp1.caption("Use the **Upload Transaction CSV** button in the sidebar ↖")
+
+        lp2.markdown("""<div style='background:#1e293b;border:2px solid #3b82f6;
+            border-radius:10px;padding:20px;text-align:center'>
+            <div style='font-size:32px'>🔍</div>
+            <h3 style='color:white;margin:8px 0 4px'>Single Wallet</h3>
+            <p style='color:#94a3b8;font-size:13px'>Enter any address — fetch live data</p>
+            </div>""", unsafe_allow_html=True)
+
+        lp3.markdown("""<div style='background:#1e293b;border:1px solid #334155;
+            border-radius:10px;padding:20px;text-align:center'>
+            <div style='font-size:32px'>📋</div>
+            <h3 style='color:white;margin:8px 0 4px'>Saved Cases</h3>
+            <p style='color:#94a3b8;font-size:13px'>Open existing investigation cases</p>
+            </div>""", unsafe_allow_html=True)
+        if lp3.button("📋 Open Case Dashboard", use_container_width=True, key="open_cases_btn"):
+            st.session_state.nav_page = "📊 Case Dashboard"
+            st.rerun()
+
+        st.divider()
+
+        # ── Single Wallet Investigation ───────────────────────
+        st.markdown("### 🔍 Investigate a Single Wallet")
+        st.caption(
+            "Enter any crypto address. The tool fetches its recent transactions "
+            "from the blockchain and loads them as your investigation dataset — no CSV needed."
+        )
+
+        sw1, sw2, sw3 = st.columns([3, 1, 1])
+        wallet_input = sw1.text_input(
+            "Wallet address",
+            key="landing_wallet",
+            placeholder="0x1234…  or  1BoatSLRH…  or  TXyz…",
+            label_visibility="collapsed",
+        )
+        wallet_chain = sw2.selectbox(
+            "Chain",
+            ["ethereum","bsc","polygon","bitcoin","tron","avalanche","arbitrum","optimism"],
+            key="landing_chain",
+            label_visibility="collapsed",
+        )
+        max_txs_opts = sw3.selectbox(
+            "Max txs", [50, 100, 200, 500],
+            key="landing_max",
+            label_visibility="collapsed",
+        )
+
+        if st.button("🔍 Investigate This Wallet", type="primary",
+                     use_container_width=True, key="landing_investigate"):
+            addr = wallet_input.strip()
+            if not addr:
+                st.warning("⚠️ Enter a wallet address first.")
+            else:
+                api_key = get_key("etherscan_key")
+                with st.spinner(f"Fetching {wallet_chain} transactions for `{addr[:20]}…`"):
+                    try:
+                        from blockchain_apis import lookup_address
+                        result = lookup_address(
+                            addr, wallet_chain,
+                            include_tokens=True,
+                            api_key=api_key,
+                        )
+                        txs = result.get("transactions")
+                        if isinstance(txs, pd.DataFrame) and not txs.empty:
+                            txs = txs.head(int(max_txs_opts))
+                            st.session_state.raw_df = txs
+                            st.session_state.pop("processed_df", None)
+                            st.session_state.nav_page = "📊 Overview"
+                            st.success(
+                                f"✅ {len(txs)} transactions loaded for "
+                                f"`{addr[:20]}…` on {wallet_chain}"
+                            )
+                            st.rerun()
+                        else:
+                            err = result.get("error","")
+                            if any(k in err.lower() for k in ("api_key","apikey","key","auth")):
+                                st.warning(
+                                    f"⚠️ **API key required** for {wallet_chain}. "
+                                    "Add your key in ⚙️ Settings → API Keys in the sidebar."
+                                )
+                            elif err:
+                                st.error(f"Fetch error: {err}")
+                            else:
+                                st.info(
+                                    f"No transactions found for `{addr}` on {wallet_chain}. "
+                                    "Try a different chain or verify the address."
+                                )
+                    except Exception as _ex:
+                        st.error(f"Could not fetch transactions: {_ex}")
+
+        st.divider()
+
+        # ── Sample data shortcuts ─────────────────────────────
+        st.markdown("### 🧪 Explore with sample data (no setup needed)")
+        samp1, samp2 = st.columns(2)
+        if samp1.button("🧪 Load BSC/DeFi Sample", use_container_width=True, key="land_samp_bsc"):
+            st.session_state.sample = True
+            st.rerun()
+        if samp2.button("🧪 Load Bitcoin Sample", use_container_width=True, key="land_samp_btc"):
+            st.session_state.sample_btc = True
+            st.rerun()
+
+        # ── CSV format reminder ───────────────────────────────
+        with st.expander("📄 CSV upload format reference", expanded=False):
+            st.markdown("**Required columns:**")
+            st.code("date, from_address, to_address, amount, token", language="text")
+            st.markdown("**Optional columns that unlock extra features:**")
+            st.code("tx_hash, chain, gas_price, block_number, risk_level", language="text")
 
 st.caption("Crypto Forensics Pro v5.0 · Claude AI · For authorized investigative use only")

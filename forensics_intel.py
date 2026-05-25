@@ -11,6 +11,18 @@ import plotly.express as px
 import streamlit as st
 import json
 import logging
+
+def fmt_crypto(x, decimals: int = 10) -> str:
+    """Full-precision crypto amount — no $ sign, no trailing zeros."""
+    try:
+        v = float(x)
+        if v != v or v == 0:
+            return "0"
+        return f"{v:.{decimals}f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(x)
+
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
@@ -51,40 +63,6 @@ def detect_structuring(
     """
     logger.info("Scanning for structuring patterns…")
     df = df.copy()
-    # Normalize address columns safely
-    for col in ["from_address", "to_address"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-
-    # Normalize token safely
-    if "token" in df.columns:
-        df["token"] = (
-            df["token"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-
-    # Normalize risk safely
-    if "risk_level" in df.columns:
-        df["risk_level"] = (
-            df["risk_level"]
-            .fillna("LOW")
-            .astype(str)
-            .str.upper()
-        )
-
-    # Normalize amount safely
-    if "amount" in df.columns:
-        df["amount"] = pd.to_numeric(
-            df["amount"],
-            errors="coerce"
-        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).sort_values("date")
 
@@ -158,40 +136,6 @@ def analyze_velocity(df: pd.DataFrame) -> pd.DataFrame:
     """
     logger.info("Calculating velocity metrics…")
     df = df.copy()
-    # Normalize address columns safely
-    for col in ["from_address", "to_address"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-
-    # Normalize token safely
-    if "token" in df.columns:
-        df["token"] = (
-            df["token"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-
-    # Normalize risk safely
-    if "risk_level" in df.columns:
-        df["risk_level"] = (
-            df["risk_level"]
-            .fillna("LOW")
-            .astype(str)
-            .str.upper()
-        )
-
-    # Normalize amount safely
-    if "amount" in df.columns:
-        df["amount"] = pd.to_numeric(
-            df["amount"],
-            errors="coerce"
-        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"])
 
@@ -270,9 +214,6 @@ def build_network_graph(
     import networkx as nx
 
     df2 = df[df["amount"] >= min_amount].copy()
-    df2 = df2.dropna(
-        subset=["from_address", "to_address", "amount"]
-    )
     flows = (
         df2.groupby(["from_address", "to_address"])
         .agg(total=("amount", "sum"), count=("amount", "size"),
@@ -392,14 +333,9 @@ def profile_wallet(df: pd.DataFrame, address: str) -> Dict:
     Generate a full forensic profile for a single address.
     Works on the loaded dataset — no API calls needed.
     """
-    addr_lower = str(address).lower()
-    outbound = df[
-        df["from_address"].astype(str).str.lower() == addr_lower
-        ]
-
-    inbound = df[
-        df["to_address"].astype(str).str.lower() == addr_lower
-        ]
+    addr_lower = address.lower()
+    outbound = df[df["from_address"].str.lower() == addr_lower]
+    inbound  = df[df["to_address"].str.lower()   == addr_lower]
 
     if outbound.empty and inbound.empty:
         return {"error": f"Address {address} not found in dataset."}
@@ -490,8 +426,8 @@ def render_wallet_profile(profile: Dict):
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Tx",          profile["total_transactions"])
-    c2.metric("Total Sent",        f"${profile['total_sent']:,.2f}")
-    c3.metric("Total Received",    f"${profile['total_received']:,.2f}")
+    c2.metric("Total Sent",        fmt_crypto(profile['total_sent']))
+    c3.metric("Total Received",    fmt_crypto(profile['total_received']))
     c4.metric("Unique Recipients", profile["unique_recipients"])
     c5.metric("Active Days",       profile["active_days"])
 
@@ -541,40 +477,6 @@ def detect_peeling_chains(
     """
     logger.info("Scanning for peeling chains…")
     df = df.copy()
-    # Normalize address columns safely
-    for col in ["from_address", "to_address"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-
-    # Normalize token safely
-    if "token" in df.columns:
-        df["token"] = (
-            df["token"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-
-    # Normalize risk safely
-    if "risk_level" in df.columns:
-        df["risk_level"] = (
-            df["risk_level"]
-            .fillna("LOW")
-            .astype(str)
-            .str.upper()
-        )
-
-    # Normalize amount safely
-    if "amount" in df.columns:
-        df["amount"] = pd.to_numeric(
-            df["amount"],
-            errors="coerce"
-        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.sort_values("date")
 
@@ -592,36 +494,11 @@ def detect_peeling_chains(
 
         for _ in range(20):   # Max chain depth
             # Find next outbound from current_to with similar (slightly smaller) amount
-            current_to_safe = str(current_to).strip().lower()
-
-            df2 = df.copy()
-
-            df2["from_address"] = (
-                df2["from_address"]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-                .str.lower()
-            )
-
-            df2["amount"] = pd.to_numeric(
-                df2["amount"],
-                errors="coerce"
-            ).fillna(0)
-
-            candidates = df2[
-                (
-                        df2["from_address"] == current_to_safe
-                )
-                &
-                (
-                        df2["amount"] <= float(current_amt)
-                )
-                &
-                (
-                        df2["amount"] >= float(current_amt) * (1 - tolerance_pct)
-                )
-                ]
+            candidates = df[
+                (df["from_address"].str.lower() == current_to.lower()) &
+                (df["amount"] <= current_amt) &
+                (df["amount"] >= current_amt * (1 - tolerance_pct))
+            ]
 
             if candidates.empty:
                 break
@@ -682,40 +559,6 @@ def detect_cross_chain_hops(
         return []
 
     df = df.copy()
-    # Normalize address columns safely
-    for col in ["from_address", "to_address"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-
-    # Normalize token safely
-    if "token" in df.columns:
-        df["token"] = (
-            df["token"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-
-    # Normalize risk safely
-    if "risk_level" in df.columns:
-        df["risk_level"] = (
-            df["risk_level"]
-            .fillna("LOW")
-            .astype(str)
-            .str.upper()
-        )
-
-    # Normalize amount safely
-    if "amount" in df.columns:
-        df["amount"] = pd.to_numeric(
-            df["amount"],
-            errors="coerce"
-        ).fillna(0)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df[df["amount"] >= min_amount].dropna(subset=["date"])
 
@@ -878,28 +721,7 @@ def render_case_notes(df: Optional[pd.DataFrame] = None):
         tags_df = pd.DataFrame([
             {"address": k, **v} for k, v in notes["address_tags"].items()
         ])
-        st.dataframe(tags_df, use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+        st.dataframe(tags_df, width='stretch', hide_index=True)
 
         # Export tags as CSV
         st.download_button(

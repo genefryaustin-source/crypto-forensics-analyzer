@@ -56,7 +56,7 @@ virtual currency activity involving the following blockchain addresses:
 
 {addr_list}
 
-Total transaction volume associated with this activity: ${total_volume:,.2f}
+Total transaction volume associated with this activity: {fmt_crypto(total_volume)} (crypto)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -205,7 +205,7 @@ def generate_sar_pdf(
     data = [["Field", "Value"],
             ["Case ID", case_id],
             ["Filing Date", datetime.now().strftime("%Y-%m-%d")],
-            ["Total Volume", f"${total_volume:,.2f}"],
+            ["Total Volume", fmt_crypto(total_volume)],
             ["Addresses", str(len(subject_addresses))],
             ["Disposition", "SAR FILING RECOMMENDED"]]
     t = Table(data, colWidths=[2*inch, 4*inch])
@@ -286,7 +286,7 @@ def generate_auto_sar_from_session(
             f"Analysis of {len(df):,} blockchain transactions across "
             f"{', '.join(chains[:3]) or 'multiple'} chain(s) identified "
             f"{critical} CRITICAL-risk and {high} HIGH-risk transactions "
-            f"totaling ${total_vol:,.2f} in transaction volume."
+            f"totaling {fmt_crypto(total_vol)} (crypto) in transaction volume."
         )
 
         # Top addresses by volume
@@ -549,7 +549,7 @@ def render_compliance_ui(df: Optional[pd.DataFrame] = None):
             if not large_txs.empty:
                 st.warning(f"⚠️ {len(large_txs)} transactions ≥ $10,000 detected — CTR may be required")
                 st.dataframe(large_txs[["date","from_address","to_address","amount","token"]],
-                             width=True, hide_index=True)
+                             width='stretch', hide_index=True)
                 if st.button("📋 Generate CTR Data", key="gen_ctr"):
                     ctr = generate_ctr_data(ctr_filer, ctr_ein,
                                              large_txs.to_dict("records"))
