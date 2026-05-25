@@ -1468,12 +1468,15 @@ if df is not None or st.session_state.get("nav_page","") in _ALWAYS_ACCESSIBLE_P
         df = pd.DataFrame()
 
 if df is not None and not df.empty or st.session_state.get("nav_page","") in _ALWAYS_ACCESSIBLE_PAGES:
-    st.caption(
-        f"✅ {len(df):,} transactions loaded · "
-        f"🔴 {(df['risk_level']=='CRITICAL').sum()} critical · "
-        f"🟠 {(df['risk_level']=='HIGH').sum()} high · "
-        f"⚠️ {df['is_anomaly'].sum()} anomalies"
-    )
+    # Guard: columns may not exist if the pipeline hasn't run yet or
+    # if an always-accessible page was opened before any data was loaded.
+    _n_critical = int((df['risk_level']=='CRITICAL').sum()) if 'risk_level' in df.columns else 0
+    _n_high     = int((df['risk_level']=='HIGH').sum())     if 'risk_level' in df.columns else 0
+    _n_anom     = int(df['is_anomaly'].sum())               if 'is_anomaly'  in df.columns else 0
+    _caption    = f"✅ {len(df):,} transactions loaded"
+    if 'risk_level' in df.columns:
+        _caption += f" · 🔴 {_n_critical} critical · 🟠 {_n_high} high · ⚠️ {_n_anom} anomalies"
+    st.caption(_caption)
     if _OPTIONAL_MISSING:
         with st.sidebar.expander("⚠️ Optional modules not found", expanded=False):
             st.caption(
