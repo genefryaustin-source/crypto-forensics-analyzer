@@ -213,15 +213,60 @@ def collect_address_profile(
 
     # ── 9. Pig Butchering / Scam Patterns ─────────────────────
     pig_df = _safe_get("pig_df")
+
     if isinstance(pig_df, pd.DataFrame) and not pig_df.empty:
+
+        # Safe column extraction
+        victim_series = (
+            pig_df["victim_address"]
+            if "victim_address" in pig_df.columns
+            else pd.Series("", index=pig_df.index)
+        )
+
+        scammer_series = (
+            pig_df["scammer_address"]
+            if "scammer_address" in pig_df.columns
+            else pd.Series("", index=pig_df.index)
+        )
+
+        # Normalize safely
+        victim_series = (
+            victim_series
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .str.strip()
+        )
+
+        scammer_series = (
+            scammer_series
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .str.strip()
+        )
+
+        # Correct boolean logic
         addr_pig = pig_df[
-            pig_df.get("victim_address","").str.lower() == addr_lower |
-            pig_df.get("scammer_address","").str.lower() == addr_lower
-        ] if "scammer_address" in pig_df.columns else pd.DataFrame()
+            (
+                    victim_series == addr_lower
+            )
+            |
+            (
+                    scammer_series == addr_lower
+            )
+            ]
+
         if not addr_pig.empty:
             score += 70
-            profile["flags"].append("🐷 Pig butchering / investment scam pattern")
-            profile["sections"]["scam_patterns"] = addr_pig.to_dict("records")
+
+            profile["flags"].append(
+                "🐷 Pig butchering / investment scam pattern"
+            )
+
+            profile["sections"]["scam_patterns"] = (
+                addr_pig.to_dict("records")
+            )
 
     # ── 10. DPRK / Lazarus ───────────────────────────────────
     dprk_df = _safe_get("dprk_df")
