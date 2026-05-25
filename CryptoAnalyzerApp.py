@@ -2335,25 +2335,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                     anom_df = pd.DataFrame(res["anomalies"][:50])
                     st.dataframe(anom_df[["address","type","severity","detail","tx_hash"]],
                                  use_container_width=True,
-                                 height=480,
                                  hide_index=True,
                                  column_config={
-                                     "address": st.column_config.TextColumn(
-                                         "Address",
-                                         width="large"
-                                     ),
-                                     "type": st.column_config.TextColumn(
-                                         "Type",
+                                     col: st.column_config.TextColumn(
+                                         col,
                                          width="medium"
-                                     ),
-                                     "label": st.column_config.TextColumn(
-                                         "Label",
-                                         width="large"
-                                     ),
-                                     "source": st.column_config.TextColumn(
-                                         "Source",
-                                         width="medium"
-                                     ),
+                                     )
+                                     for col in df.columns
                                  }
                                  )
                 else:
@@ -2365,25 +2353,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                     mix_df = pd.DataFrame(res["mixers"])
                     st.dataframe(mix_df[["address","mixer_score","fan_in","fan_out","total_volume","classification"]].style.background_gradient(
                         subset=["mixer_score"], cmap="Reds"), use_container_width=True,
-    height=480,
     hide_index=True,
     column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
+        col: st.column_config.TextColumn(
+            col,
             width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
+        )
+        for col in df.columns
     }
 )
                 else:
@@ -2408,25 +2384,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                     peel_df = pd.DataFrame(res["peeling"])
                     st.dataframe(peel_df[["chain_length","start_address","end_address","start_amount","end_amount","peel_pct","severity"]],
                                  use_container_width=True,
-                                 height=480,
                                  hide_index=True,
                                  column_config={
-                                     "address": st.column_config.TextColumn(
-                                         "Address",
-                                         width="large"
-                                     ),
-                                     "type": st.column_config.TextColumn(
-                                         "Type",
+                                     col: st.column_config.TextColumn(
+                                         col,
                                          width="medium"
-                                     ),
-                                     "label": st.column_config.TextColumn(
-                                         "Label",
-                                         width="large"
-                                     ),
-                                     "source": st.column_config.TextColumn(
-                                         "Source",
-                                         width="medium"
-                                     ),
+                                     )
+                                     for col in df.columns
                                  }
                                  )
                 else:
@@ -2438,25 +2402,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                     cc_df = pd.DataFrame(res["cross_chain"])
                     st.dataframe(cc_df[["chain_from","chain_to","amount","delta_hours","token_a","token_b","address_from"]],
                                  use_container_width=True,
-                                 height=480,
                                  hide_index=True,
                                  column_config={
-                                     "address": st.column_config.TextColumn(
-                                         "Address",
-                                         width="large"
-                                     ),
-                                     "type": st.column_config.TextColumn(
-                                         "Type",
+                                     col: st.column_config.TextColumn(
+                                         col,
                                          width="medium"
-                                     ),
-                                     "label": st.column_config.TextColumn(
-                                         "Label",
-                                         width="large"
-                                     ),
-                                     "source": st.column_config.TextColumn(
-                                         "Source",
-                                         width="medium"
-                                     ),
+                                     )
+                                     for col in df.columns
                                  }
                                  )
                 else:
@@ -2503,25 +2455,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             st.dataframe(
                 vel[show_cols].head(50).style.background_gradient(subset=["velocity_score"], cmap="Reds"),
                 use_container_width=True,
-                height=480,
                 hide_index=True,
                 column_config={
-                    "address": st.column_config.TextColumn(
-                        "Address",
-                        width="large"
-                    ),
-                    "type": st.column_config.TextColumn(
-                        "Type",
+                    col: st.column_config.TextColumn(
+                        col,
                         width="medium"
-                    ),
-                    "label": st.column_config.TextColumn(
-                        "Label",
-                        width="large"
-                    ),
-                    "source": st.column_config.TextColumn(
-                        "Source",
-                        width="medium"
-                    ),
+                    )
+                    for col in df.columns
                 }
             )
 
@@ -2607,25 +2547,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             edf = st.session_state.enriched_df
             show = [c for c in ["date","from_address","from_label","to_address","to_label","amount","token"] if c in edf.columns]
             st.dataframe(edf[show].head(100), use_container_width=True,
-    height=480,
     hide_index=True,
     column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
+        col: st.column_config.TextColumn(
+            col,
             width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
+        )
+        for col in df.columns
     }
 )
 
@@ -2665,49 +2593,25 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 else: st.info("None detected.")
             with t2:
                 if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), use_container_width=True,
-    height=480,
     hide_index=True,
     column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
+        col: st.column_config.TextColumn(
+            col,
             width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
+        )
+        for col in df.columns
     }
 )
                 else: st.info("None detected.")
             with t3:
                 if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), use_container_width=True,
-    height=480,
     hide_index=True,
     column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
+        col: st.column_config.TextColumn(
+            col,
             width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
+        )
+        for col in df.columns
     }
 )
                 else: st.info("None detected.")
@@ -2715,7 +2619,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
         ts_a = st.text_input("Address timeline", key="ts_addr", placeholder="Paste address")
         if ts_a:
             fig = plot_address_timeline(df, ts_a)
-            if fig: st.plotly_chart(fig, width=True)
+            if fig: st.plotly_chart(fig, use_container_width=True)
 
 
 
