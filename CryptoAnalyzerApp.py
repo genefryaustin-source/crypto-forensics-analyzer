@@ -61,6 +61,12 @@ except ImportError:
     def generate_full_report(df, **kw): return None
 
 try:
+    from forensics_help import render_help_ui, render_sidebar_help
+except ImportError:
+    def render_help_ui(): import streamlit as st; st.info("Add forensics_help.py to enable help page.")
+    def render_sidebar_help(): pass
+
+try:
     from forensics_lightning import render_lightning_ui
 except ImportError:
     _OPTIONAL_MISSING.append("forensics_lightning")
@@ -361,8 +367,12 @@ with st.sidebar:
         "📰 Crime Intel":     ["📰 Crypto Crime News","💹 Stablecoin Depeg"],
         "🔌 API":             ["🔌 REST API"],
         "📤 Reports":       ["📄 PDF Report","📤 Export & SIEM","🕸 Maltego Export","📁 Case Notes"],
+        "📖 Help":           ["📖 Help & Guide"],
         "⚙️ Settings":      ["⚙️ Configuration"],
     }
+    render_sidebar_help()
+    st.sidebar.markdown("---")
+
     for group, pages in NAV_GROUPS.items():
         st.markdown(f"**{group}**")
         for pg in pages:
@@ -764,32 +774,10 @@ def calculate_risk(row):
 # ─────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Detect anomalous transactions using Isolation Forest.
-
-    Safely normalizes:
-    - addresses
-    - token/symbol fields
-    - risk levels
-    - amounts
-
-    Handles:
-    - missing columns
-    - mixed schemas
-    - malformed numeric values
-    - contract-address token labels
-    - small datasets
-    """
-
     df = df.copy()
-
-    # ---------------------------------------------------------
     # Normalize address columns safely
-    # ---------------------------------------------------------
     for col in ["from_address", "to_address"]:
-
         if col in df.columns:
-
             df[col] = (
                 df[col]
                 .fillna("")
@@ -797,146 +785,39 @@ def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
                 .str.strip()
             )
 
-        else:
-
-            df[col] = ""
-
-    # ---------------------------------------------------------
-    # Normalize token/symbol safely
-    # ---------------------------------------------------------
-    token_candidates = [
-        "token",
-        "symbol",
-        "asset",
-        "currency",
-        "token_symbol",
-        "ticker",
-        "coin"
-    ]
-
-    token_col = None
-
-    for c in token_candidates:
-
-        if c in df.columns:
-            token_col = c
-            break
-
-    if token_col:
-
+    # Normalize token safely
+    if "token" in df.columns:
         df["token"] = (
-            df[token_col]
-            .fillna("UNKNOWN")
+            df["token"]
+            .fillna("")
             .astype(str)
             .str.strip()
         )
 
-    else:
-
-        df["token"] = "UNKNOWN"
-
-    # Replace contract-address style labels
-    df["token"] = np.where(
-        df["token"].str.match(
-            r"^0x[a-fA-F0-9]{40}$",
-            na=False
-        ),
-        "TOKEN_CONTRACT",
-        df["token"]
-    )
-
-    # Replace empty values
-    df["token"] = (
-        df["token"]
-        .replace("", "UNKNOWN")
-        .fillna("UNKNOWN")
-    )
-
-    # ---------------------------------------------------------
     # Normalize risk safely
-    # ---------------------------------------------------------
     if "risk_level" in df.columns:
-
         df["risk_level"] = (
             df["risk_level"]
             .fillna("LOW")
             .astype(str)
             .str.upper()
-            .str.strip()
         )
 
-    else:
-
-        df["risk_level"] = "LOW"
-
-    # ---------------------------------------------------------
     # Normalize amount safely
-    # ---------------------------------------------------------
     if "amount" in df.columns:
-
-        df["amount"] = (
-            df["amount"]
-            .astype(str)
-            .str.replace(",", "", regex=False)
-            .str.replace("$", "", regex=False)
-            .str.strip()
-        )
-
         df["amount"] = pd.to_numeric(
             df["amount"],
             errors="coerce"
         ).fillna(0)
-
-    else:
-
-        df["amount"] = 0.0
-
-    # ---------------------------------------------------------
-    # Initialize anomaly column
-    # ---------------------------------------------------------
-    df["is_anomaly"] = False
-
-    # ---------------------------------------------------------
-    # Skip model if dataset too small
-    # ---------------------------------------------------------
     if len(df) < 5:
+        df['is_anomaly'] = False
         return df
-
-    # ---------------------------------------------------------
-    # Feature engineering
-    # ---------------------------------------------------------
-    feat = np.log1p(
-        df[["amount"]]
-        .fillna(0)
-        .values
-    )
-
-    # ---------------------------------------------------------
-    # Optimize estimator count for large datasets
-    # ---------------------------------------------------------
+    feat = np.log1p(df[['amount']].fillna(0).values)
+    # Reduce n_estimators for speed on large datasets
     n_est = 50 if len(df) > 5000 else 100
-
-    # ---------------------------------------------------------
-    # Isolation Forest anomaly detection
-    # ---------------------------------------------------------
-    try:
-
-        model = IsolationForest(
-            contamination=0.15,
-            random_state=42,
-            n_estimators=n_est
-        )
-
-        df["is_anomaly"] = (
-            model.fit_predict(feat) == -1
-        )
-
-    except Exception as e:
-
-        print(f"⚠️ IsolationForest failed: {e}")
-
-        df["is_anomaly"] = False
-
+    df['is_anomaly'] = IsolationForest(
+        contamination=0.15, random_state=42, n_estimators=n_est
+    ).fit_predict(feat) == -1
     return df
 
 
@@ -1452,28 +1333,7 @@ if (st.session_state.get("do_lookup") or st.session_state.get("do_lookup_both"))
                 all_txs = pd.concat([result['native_txs'], result['token_txs']], ignore_index=True)
 
                 if not all_txs.empty:
-                    st.dataframe(all_txs.head(5000), use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+                    st.dataframe(all_txs.head(5000), width='stretch')
 
                     if st.button("➕ Add to dataset"):
                         if "loaded_data" not in st.session_state:
@@ -1602,7 +1462,7 @@ if df is not None:
                              color_discrete_map={"CRITICAL":"#ff4444","HIGH":"#ff8800",
                                                  "MEDIUM":"#ffcc00","LOW":"#22c55e"})
             fig_pie.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width='stretch')
 
         with col_b:
             st.markdown("**Volume by Token**")
@@ -1610,7 +1470,7 @@ if df is not None:
             fig_bar = px.bar(vol_token, x='token', y='amount',
                              color='amount', color_continuous_scale='Reds')
             fig_bar.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width='stretch')
 
         # Top flagged addresses
         st.markdown("**Top Flagged Addresses**")
@@ -1618,28 +1478,7 @@ if df is not None:
             df[['from_address','risk_score']].rename(columns={'from_address':'address'}),
             df[['to_address','risk_score']].rename(columns={'to_address':'address'})
         ]).groupby('address')['risk_score'].max().reset_index().nlargest(10, 'risk_score')
-        st.dataframe(addr_risk, use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+        st.dataframe(addr_risk, width='stretch', hide_index=True)
 
     # ── TAB 2: Transactions ──────────────────────────────────
     elif page == '📋 Transactions':
@@ -1687,28 +1526,7 @@ if df is not None:
             highlight_risk, subset=['risk_level']
         ).format({'amount': '${:,.2f}', 'risk_score': '{:.0f}'})
 
-        st.dataframe(styled, use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+        st.dataframe(styled, width='stretch', height=480)
         st.caption(
                 f"Showing rows {start+1}–{min(end, len(filtered))} "
                 f"of {len(filtered):,} filtered  |  {len(df):,} total  |  "
@@ -1756,7 +1574,7 @@ if df is not None:
             try:
                 st.plotly_chart(
                     st.session_state.sankey_fig,
-                    width=True,
+                    use_container_width=True,
                     config={"displayModeBar": True, "scrollZoom": False},
                 )
             except Exception as e:
@@ -1771,7 +1589,7 @@ if df is not None:
         st.subheader("📅 Transaction Timeline")
         fig_tl = create_timeline(df)
         if fig_tl:
-            st.plotly_chart(fig_tl, width=True)
+            st.plotly_chart(fig_tl, use_container_width=True)
         else:
             st.info("No date column detected in dataset.")
 
@@ -1782,7 +1600,7 @@ if df is not None:
             weekly = df_dated.groupby('week')['amount'].sum().reset_index()
             fig_weekly = px.bar(weekly, x='week', y='amount', title="Weekly Volume")
             fig_weekly.update_layout(height=280)
-            st.plotly_chart(fig_weekly, width=True)
+            st.plotly_chart(fig_weekly, use_container_width=True)
 
     # ── TAB 5: Multi-hop ─────────────────────────────────────
     elif page == '🔗 Multi-hop Tracer':
@@ -1838,86 +1656,23 @@ if df is not None:
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+                                st.dataframe(styled, width='stretch', hide_index=True)
                     with fwd_tabs[1]:
                         for hop_num, txs in trace_result["backward"]["hops"].items():
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+                                st.dataframe(styled, width='stretch', hide_index=True)
                 else:
                     for hop_num, txs in trace_result["hops"].items():
                         with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                             hop_df = pd.DataFrame(txs)
                             styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                            st.dataframe(styled, use_container_width=True,
-    height=480,
-    hide_index=True,
-    column_config={
-        "address": st.column_config.TextColumn(
-            "Address",
-            width="large"
-        ),
-        "type": st.column_config.TextColumn(
-            "Type",
-            width="medium"
-        ),
-        "label": st.column_config.TextColumn(
-            "Label",
-            width="large"
-        ),
-        "source": st.column_config.TextColumn(
-            "Source",
-            width="medium"
-        ),
-    }
-)
+                            st.dataframe(styled, width='stretch', hide_index=True)
 
             with result_tabs[2]:
                 addr_summary = tracer.get_address_risk_summary(trace_result)
-                st.dataframe(addr_summary, width=True)
+                st.dataframe(addr_summary, width='stretch')
 
             with result_tabs[3]:
                 # Create Sankey from trace
@@ -1933,7 +1688,7 @@ if df is not None:
                     trace_df = pd.DataFrame(all_txs_list)
                     fig_trace = create_sankey(trace_df, top_n=50)
                     if fig_trace:
-                        st.plotly_chart(fig_trace, width=True)
+                        st.plotly_chart(fig_trace, width='stretch')
 
     # ── TAB 6: AI Analysis ───────────────────────────────────
     elif page == '🤖 Claude AI':
@@ -1992,6 +1747,11 @@ if df is not None:
     elif page == '📄 PDF Report':
         render_full_pdf_ui(df)
 
+
+    # ── Help & Guide ─────────────────────────────────────────
+    elif page == "📖 Help & Guide":
+        render_help_ui()
+
     # ── TAB 8: Configuration ─────────────────────────────────
     elif page == '⚙️ Configuration':
         st.subheader("⚙️ App Configuration & API Status")
@@ -2039,7 +1799,7 @@ if df is not None:
                               else "color:red" if "❌" in str(v) else "",
                     subset=["Status"]
                 ),
-                width=True,
+                width='stretch',
                 hide_index=True,
         )
 
@@ -2463,16 +2223,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["anomalies"]:
                     anom_df = pd.DataFrame(res["anomalies"][:50])
                     st.dataframe(anom_df[["address","type","severity","detail","tx_hash"]],
-                                 use_container_width=True,
-                                 hide_index=True,
-                                 column_config={
-                                     col: st.column_config.TextColumn(
-                                         col,
-                                         width="medium"
-                                     )
-                                     for col in df.columns
-                                 }
-                                 )
+                                 width='stretch', hide_index=True)
                 else:
                     st.info("No behavioral anomalies detected.")
 
@@ -2481,16 +2232,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["mixers"]:
                     mix_df = pd.DataFrame(res["mixers"])
                     st.dataframe(mix_df[["address","mixer_score","fan_in","fan_out","total_volume","classification"]].style.background_gradient(
-                        subset=["mixer_score"], cmap="Reds"), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+                        subset=["mixer_score"], cmap="Reds"), use_container_width=True, hide_index=True)
                 else:
                     st.info("No mixer candidates detected.")
 
@@ -2512,16 +2254,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["peeling"]:
                     peel_df = pd.DataFrame(res["peeling"])
                     st.dataframe(peel_df[["chain_length","start_address","end_address","start_amount","end_amount","peel_pct","severity"]],
-                                 use_container_width=True,
-                                 hide_index=True,
-                                 column_config={
-                                     col: st.column_config.TextColumn(
-                                         col,
-                                         width="medium"
-                                     )
-                                     for col in df.columns
-                                 }
-                                 )
+                                 use_container_width=True, hide_index=True)
                 else:
                     st.info("No peeling chains detected.")
 
@@ -2530,16 +2263,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["cross_chain"]:
                     cc_df = pd.DataFrame(res["cross_chain"])
                     st.dataframe(cc_df[["chain_from","chain_to","amount","delta_hours","token_a","token_b","address_from"]],
-                                 use_container_width=True,
-                                 hide_index=True,
-                                 column_config={
-                                     col: st.column_config.TextColumn(
-                                         col,
-                                         width="medium"
-                                     )
-                                     for col in df.columns
-                                 }
-                                 )
+                                 use_container_width=True, hide_index=True)
                 else:
                     st.info("No cross-chain hops detected (requires multi-chain dataset).")
 
@@ -2577,21 +2301,13 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             v3.metric("🟠 Rapid (<1hr)",     (vel["velocity_class"].str.contains("RAPID")).sum())
             v4.metric("Avg TTF",             f"{vel['ttf_hours'].median():.1f} hrs")
 
-            st.plotly_chart(plot_velocity_distribution(vel), width=True)
+            st.plotly_chart(plot_velocity_distribution(vel), use_container_width=True)
 
             st.markdown("**Highest Velocity Addresses**")
             show_cols = [c for c in ["address","ttf_minutes","velocity_class","velocity_score","volume_sent","pass_through_ratio"] if c in vel.columns]
             st.dataframe(
                 vel[show_cols].head(50).style.background_gradient(subset=["velocity_score"], cmap="Reds"),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    col: st.column_config.TextColumn(
-                        col,
-                        width="medium"
-                    )
-                    for col in df.columns
-                }
+                use_container_width=True, hide_index=True
             )
 
             st.download_button("⬇️ Export Velocity CSV",
@@ -2620,7 +2336,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                         st.error("networkx not installed. Run: pip install networkx")
 
         if "ng_fig" in st.session_state:
-            st.plotly_chart(st.session_state.ng_fig, width=True)
+            st.plotly_chart(st.session_state.ng_fig, use_container_width=True)
 
         st.markdown("**Wallet Profiler** — full forensic profile for any address")
         prof_addr = st.text_input("Address to profile", placeholder="Paste from table or graph above", key="prof_addr")
@@ -2675,16 +2391,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
         if "enriched_df" in st.session_state:
             edf = st.session_state.enriched_df
             show = [c for c in ["date","from_address","from_label","to_address","to_label","amount","token"] if c in edf.columns]
-            st.dataframe(edf[show].head(100), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+            st.dataframe(edf[show].head(100), use_container_width=True, hide_index=True)
 
     elif page == "🔔 Alerts & Monitoring":
         render_alerts_ui(get_key_fn=get_key)
@@ -2716,33 +2423,15 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                             if fig is not None:
                                 st.plotly_chart(
                                     fig,
-                                    width=True,
+                                    use_container_width=True,
                                     key=f"plot_{time.time_ns()}"
                                 )
                 else: st.info("None detected.")
             with t2:
-                if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+                if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), use_container_width=True, hide_index=True)
                 else: st.info("None detected.")
             with t3:
-                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), use_container_width=True,
-    hide_index=True,
-    column_config={
-        col: st.column_config.TextColumn(
-            col,
-            width="medium"
-        )
-        for col in df.columns
-    }
-)
+                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), use_container_width=True, hide_index=True)
                 else: st.info("None detected.")
         st.divider()
         ts_a = st.text_input("Address timeline", key="ts_addr", placeholder="Paste address")
