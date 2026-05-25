@@ -1610,7 +1610,7 @@ if df is not None:
             fig_bar = px.bar(vol_token, x='token', y='amount',
                              color='amount', color_continuous_scale='Reds')
             fig_bar.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_bar, width=True)
+            st.plotly_chart(fig_bar, use_container_width=True)
 
         # Top flagged addresses
         st.markdown("**Top Flagged Addresses**")
