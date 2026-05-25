@@ -764,10 +764,32 @@ def calculate_risk(row):
 # ─────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detect anomalous transactions using Isolation Forest.
+
+    Safely normalizes:
+    - addresses
+    - token/symbol fields
+    - risk levels
+    - amounts
+
+    Handles:
+    - missing columns
+    - mixed schemas
+    - malformed numeric values
+    - contract-address token labels
+    - small datasets
+    """
+
     df = df.copy()
+
+    # ---------------------------------------------------------
     # Normalize address columns safely
+    # ---------------------------------------------------------
     for col in ["from_address", "to_address"]:
+
         if col in df.columns:
+
             df[col] = (
                 df[col]
                 .fillna("")
@@ -775,39 +797,146 @@ def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
                 .str.strip()
             )
 
-    # Normalize token safely
-    if "token" in df.columns:
+        else:
+
+            df[col] = ""
+
+    # ---------------------------------------------------------
+    # Normalize token/symbol safely
+    # ---------------------------------------------------------
+    token_candidates = [
+        "token",
+        "symbol",
+        "asset",
+        "currency",
+        "token_symbol",
+        "ticker",
+        "coin"
+    ]
+
+    token_col = None
+
+    for c in token_candidates:
+
+        if c in df.columns:
+            token_col = c
+            break
+
+    if token_col:
+
         df["token"] = (
-            df["token"]
-            .fillna("")
+            df[token_col]
+            .fillna("UNKNOWN")
             .astype(str)
             .str.strip()
         )
 
+    else:
+
+        df["token"] = "UNKNOWN"
+
+    # Replace contract-address style labels
+    df["token"] = np.where(
+        df["token"].str.match(
+            r"^0x[a-fA-F0-9]{40}$",
+            na=False
+        ),
+        "TOKEN_CONTRACT",
+        df["token"]
+    )
+
+    # Replace empty values
+    df["token"] = (
+        df["token"]
+        .replace("", "UNKNOWN")
+        .fillna("UNKNOWN")
+    )
+
+    # ---------------------------------------------------------
     # Normalize risk safely
+    # ---------------------------------------------------------
     if "risk_level" in df.columns:
+
         df["risk_level"] = (
             df["risk_level"]
             .fillna("LOW")
             .astype(str)
             .str.upper()
+            .str.strip()
         )
 
+    else:
+
+        df["risk_level"] = "LOW"
+
+    # ---------------------------------------------------------
     # Normalize amount safely
+    # ---------------------------------------------------------
     if "amount" in df.columns:
+
+        df["amount"] = (
+            df["amount"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("$", "", regex=False)
+            .str.strip()
+        )
+
         df["amount"] = pd.to_numeric(
             df["amount"],
             errors="coerce"
         ).fillna(0)
+
+    else:
+
+        df["amount"] = 0.0
+
+    # ---------------------------------------------------------
+    # Initialize anomaly column
+    # ---------------------------------------------------------
+    df["is_anomaly"] = False
+
+    # ---------------------------------------------------------
+    # Skip model if dataset too small
+    # ---------------------------------------------------------
     if len(df) < 5:
-        df['is_anomaly'] = False
         return df
-    feat = np.log1p(df[['amount']].fillna(0).values)
-    # Reduce n_estimators for speed on large datasets
+
+    # ---------------------------------------------------------
+    # Feature engineering
+    # ---------------------------------------------------------
+    feat = np.log1p(
+        df[["amount"]]
+        .fillna(0)
+        .values
+    )
+
+    # ---------------------------------------------------------
+    # Optimize estimator count for large datasets
+    # ---------------------------------------------------------
     n_est = 50 if len(df) > 5000 else 100
-    df['is_anomaly'] = IsolationForest(
-        contamination=0.15, random_state=42, n_estimators=n_est
-    ).fit_predict(feat) == -1
+
+    # ---------------------------------------------------------
+    # Isolation Forest anomaly detection
+    # ---------------------------------------------------------
+    try:
+
+        model = IsolationForest(
+            contamination=0.15,
+            random_state=42,
+            n_estimators=n_est
+        )
+
+        df["is_anomaly"] = (
+            model.fit_predict(feat) == -1
+        )
+
+    except Exception as e:
+
+        print(f"⚠️ IsolationForest failed: {e}")
+
+        df["is_anomaly"] = False
+
     return df
 
 
