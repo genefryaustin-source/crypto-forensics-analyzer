@@ -1834,7 +1834,7 @@ def render_case_dashboard():
 
         if "cross_case_links" in st.session_state:
             links = st.session_state.cross_case_links
-            if links:
+            if links is not None and not links.empty:
                 link_rows = []
                 for entity, case_ids in links.items():
                     entity_type = "🏦 Account" if entity.startswith("account:") else "🔑 Address"
