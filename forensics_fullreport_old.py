@@ -15,8 +15,6 @@ EIP-712 certificate · Case notes
 import io
 import json
 import hashlib
-import re
-import html
 import pandas as pd
 import streamlit as st
 from datetime import datetime
@@ -157,74 +155,6 @@ def _fmt_crypto(x, decimals: int = 10) -> str:
         return str(x)
 
 
-
-
-def _clean_pdf_text(value: Any, max_chars: Optional[int] = None) -> str:
-    """
-    Clean text before handing it to ReportLab Paragraph.
-
-    ReportLab's built-in Helvetica/Courier fonts do not reliably render
-    emojis, block characters, markdown box art, or some Unicode arrows.
-    This keeps reports court-readable and prevents black glyph boxes.
-    """
-    if value is None:
-        return ""
-
-    text = str(value)
-
-    replacements = {
-        "█": "#",
-        "■": "-",
-        "▪": "-",
-        "●": "-",
-        "•": "-",
-        "→": "->",
-        "←": "<-",
-        "↔": "<->",
-        "⇒": "=>",
-        "—": "-",
-        "–": "-",
-        "…": "...",
-        "≥": ">=",
-        "≤": "<=",
-        "⚠️": "[WARNING]",
-        "⚠": "[WARNING]",
-        "🚨": "[ALERT]",
-        "✅": "[OK]",
-        "🔴": "[CRITICAL]",
-        "🟠": "[HIGH]",
-        "🟡": "[MEDIUM]",
-        "🟢": "[LOW]",
-        "🛡️": "[SHIELD]",
-        "🛡": "[SHIELD]",
-        "💰": "[BALANCE]",
-        "☠️": "[RANSOMWARE]",
-        "☠": "[RANSOMWARE]",
-    }
-    for bad, good in replacements.items():
-        text = text.replace(bad, good)
-
-    # Strip any remaining non-ASCII characters that default ReportLab fonts
-    # may render as black boxes.
-    text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", " ", text)
-
-    # Collapse excessive whitespace, but preserve intentional line breaks.
-    text = "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines())
-
-    if max_chars and len(text) > max_chars:
-        text = text[: max_chars - 3] + "..."
-
-    return text
-
-
-def _pdf_para(value: Any, style: ParagraphStyle, max_chars: Optional[int] = None) -> Paragraph:
-    """Return a safe ReportLab Paragraph with escaped, sanitized text."""
-    safe = html.escape(_clean_pdf_text(value, max_chars=max_chars))
-    # Preserve line breaks inside Paragraph cells.
-    safe = safe.replace("\n", "<br/>")
-    return Paragraph(safe, style)
-
-
 def _std_table(data: list, col_widths: list, styles_extra: list = None) -> Table:
     """Standard table with default forensics styling."""
     base_styles = [
@@ -239,7 +169,7 @@ def _std_table(data: list, col_widths: list, styles_extra: list = None) -> Table
         ("TOPPADDING",    (0,0), (-1,-1), 3),
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("ROWBACKGROUNDS",(0,1), (-1,-1), [C_GREY_LIGHT, C_WHITE]),
-        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
         ("WORDWRAP",      (0,0), (-1,-1), True),
     ]
     if styles_extra:
@@ -276,105 +206,63 @@ def _truncate_addr(val: str, first: int = 12, last: int = 6) -> str:
     Shorten a crypto address for PDF display.
     Addresses have no spaces so ReportLab cannot wrap them — truncation
     is the only reliable fix.
-    Result: first_N + "..." + last_M  (e.g. "1BoatSLRHtKN...TtpyT")
+    Result: first_N + "…" + last_M  (e.g. "1BoatSLRHtKN…TtpyT")
     """
     s = str(val).strip()
     if len(s) > first + last + 3 and " " not in s:
-        return s[:first] + "..." + s[-last:]
+        return s[:first] + "…" + s[-last:]
     return s
 
 
 def _df_to_table(df: pd.DataFrame, col_widths: list,
                  max_rows: int = 50, risk_col: str = "risk_level") -> Table:
-    """Convert a DataFrame to a formatted ReportLab Table.
-
-    Fixes:
-    - wraps regular text to the next line inside cells
-    - truncates addresses and hashes so they do not bleed across columns
-    - sanitizes unsupported Unicode to avoid black boxes in PDFs
-    - uses Paragraph cells rather than raw strings for reliable wrapping
+    """Convert a DataFrame to a formatted reportlab Table.
+    Address and hash columns are automatically truncated so that long
+    hex/base58 strings cannot bleed across adjacent PDF columns.
     """
     display = df.head(max_rows).copy()
 
-    # Format floats — column-aware.
-    _CRYPTO_COL_KEYS = (
-        "amount", "volume", "balance", "paid", "sent", "received",
-        "out_volume", "in_volume", "profit"
-    )
-    _USD_COL_KEYS = ("usd", "price", "value", "worth", "loss")
-
+    # Format floats — column-aware
+    # Crypto amount columns: full precision, no $ sign
+    # Score/ratio/usd columns: conventional numeric format
+    _CRYPTO_COL_KEYS = ("amount","volume","balance","paid","sent","received","out_volume","in_volume")
+    _USD_COL_KEYS    = ("usd","price","value","worth")
     for col in display.columns:
-        try:
-            is_num = pd.api.types.is_numeric_dtype(display[col])
-        except Exception:
-            is_num = False
-
-        if not is_num:
+        if display[col].dtype != float:
             continue
-
-        col_lower = str(col).lower()
+        col_lower = col.lower()
         if any(k in col_lower for k in _CRYPTO_COL_KEYS):
             display[col] = display[col].apply(_fmt_crypto)
         elif any(k in col_lower for k in _USD_COL_KEYS):
             display[col] = display[col].apply(
-                lambda x: f"${float(x):,.2f}" if pd.notna(x) and float(x) == float(x) else ""
+                lambda x: f"${x:,.2f}" if pd.notna(x) and float(x)==float(x) else ""
             )
         else:
+            # Scores, ratios, counts etc — compact numeric
             display[col] = display[col].apply(
-                lambda x: (
-                    f"{float(x):,.4f}" if abs(float(x)) < 1
-                    else (f"{float(x):,.2f}" if abs(float(x)) < 10000 else f"{float(x):,.0f}")
-                ) if pd.notna(x) and float(x) == float(x) else ""
+                lambda x: f"{x:,.4f}" if abs(x) < 1 else (f"{x:,.2f}" if abs(x) < 10000 else f"{x:,.0f}")
+                if pd.notna(x) and float(x)==float(x) else ""
             )
 
     display = display.astype(str)
 
-    # Auto-truncate address / hash columns and address-looking cells.
-    _addr_pat = re.compile(r"^(0x[a-fA-F0-9]{20,}|[13bc][a-zA-Z0-9]{20,}|T[a-zA-Z0-9]{25,})$")
+    # Auto-truncate address / hash columns
     for col in display.columns:
-        col_lower = str(col).lower()
+        col_lower = col.lower()
         is_addr_col = any(kw in col_lower for kw in _ADDR_COL_KEYWORDS)
         if is_addr_col:
             display[col] = display[col].apply(_truncate_addr)
         else:
+            # Also truncate any cell value that looks like an address
+            # (long, no spaces, looks like hex or base58)
+            import re as _re
+            _addr_pat = _re.compile(r"^(0x[a-fA-F0-9]{20,}|[13bc][a-zA-Z0-9]{20,}|T[a-zA-Z0-9]{25,})$")
             display[col] = display[col].apply(
-                lambda v: _truncate_addr(v) if _addr_pat.match(str(v).strip()) else v
+                lambda v: _truncate_addr(v) if _addr_pat.match(v.strip()) else v
             )
 
-    # ReportLab only wraps Paragraph flowables reliably. Raw strings often
-    # clip or bleed across adjacent columns.
-    header_style = ParagraphStyle(
-        "forensics_table_header",
-        fontName="Helvetica-Bold",
-        fontSize=6.5,
-        leading=7.5,
-        textColor=C_WHITE,
-        wordWrap="CJK",
-        splitLongWords=True,
-    )
-    body_style = ParagraphStyle(
-        "forensics_table_body",
-        fontName="Courier",
-        fontSize=6.2,
-        leading=7.4,
-        textColor=HexColor("#1e293b"),
-        wordWrap="CJK",
-        splitLongWords=True,
-    )
-
-    headers = [
-        _pdf_para(str(c).replace("_", " ").title(), header_style, max_chars=60)
-        for c in display.columns
-    ]
-
-    rows = []
-    for row in display.values.tolist():
-        rows.append([
-            _pdf_para(cell, body_style, max_chars=450)
-            for cell in row
-        ])
-
-    data = [headers] + rows
+    headers = [c.replace("_"," ").title() for c in display.columns]
+    data = [headers] + display.values.tolist()
     risk_styles = _risk_col_styles(df.head(max_rows), risk_col)
     return _std_table(data, col_widths, risk_styles)
 
@@ -1084,7 +972,7 @@ def _section_hop_trace(sections: list, styles) -> List:
     elems = _next_section("Multi-hop Fund Trace", styles)
     for line in summary.split("\n")[:50]:
         if line.strip():
-            elems.append(_pdf_para(line.strip(), styles["code"]))
+            elems.append(Paragraph(line.strip(), styles["code"]))
     return elems
 
 
@@ -1113,7 +1001,7 @@ def _section_ai(sections: list, styles) -> List:
     elems = _next_section("AI Forensics Analysis — Claude Anthropic", styles)
     for para in ai.split("\n\n")[:40]:
         if para.strip():
-            elems.append(_pdf_para(para.strip(), styles["body"], max_chars=600))
+            elems.append(Paragraph(para.strip()[:600], styles["body"]))
             elems.append(Spacer(1, 4))
     return elems
 
@@ -1128,7 +1016,7 @@ def _section_sar(sections: list, styles) -> List:
         styles["warn"]))
     elems.append(Spacer(1,6))
     for line in sar.split("\n")[:80]:
-        elems.append(_pdf_para(line if line.strip() else " ", styles["body"]))
+        elems.append(Paragraph(line if line.strip() else " ", styles["body"]))
     return elems
 
 
@@ -1190,7 +1078,7 @@ def _section_certificate(sections: list, styles) -> List:
     sections.append("EIP-712 Evidence Certificate")
     elems = _next_section("EIP-712 Cryptographic Evidence Certificate", styles)
     for line in cert.split("\n"):
-        elems.append(_pdf_para(line if line.strip() else " ", styles["code"]))
+        elems.append(Paragraph(line if line.strip() else " ", styles["code"]))
     return elems
 
 
