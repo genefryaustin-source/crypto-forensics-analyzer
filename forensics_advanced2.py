@@ -755,7 +755,7 @@ def render_advanced2_ui(df: pd.DataFrame, get_key_fn=None):
                 # Visual
                 fig_gnn = plot_gnn_clusters(gdf, df)
                 if fig_gnn:
-                    st.plotly_chart(fig_gnn, width=True)
+                    st.plotly_chart(fig_gnn, use_container_width=True)
 
                 st.markdown("**Full Cluster Assignments:**")
                 st.dataframe(gdf, use_container_width=True,
@@ -851,7 +851,15 @@ def render_advanced2_ui(df: pd.DataFrame, get_key_fn=None):
                 if all_alerts:
                     mempool_log.dataframe(
                         pd.DataFrame(all_alerts[:20]),
-                        width=True, hide_index=True
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            col: st.column_config.TextColumn(
+                                col,
+                                width="medium"
+                            )
+                            for col in df.columns
+                        }
                     )
 
                 time.sleep(mp_poll)
