@@ -208,7 +208,7 @@ except ImportError:
     _OPTIONAL_MISSING.append("forensics_compliance2")
     def render_compliance2_ui(df, get_key_fn=None):
         st.info("Add forensics_compliance2.py to your app folder.")
-    def render_case_dashboard():
+    def render_case_dashboard(df=None, get_key_fn=None):
         st.info("Add forensics_compliance2.py to your app folder.")
 
 try:
@@ -2603,7 +2603,7 @@ else:
         st.markdown("## 📊 Case Dashboard")
         st.divider()
         try:
-            render_case_dashboard()
+            render_case_dashboard(df=None, get_key_fn=get_key)
         except Exception as _e:
             st.error(f"Case dashboard error: {_e}")
 

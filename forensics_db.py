@@ -71,9 +71,18 @@ def initialize_db():
                 le_agency       TEXT,
                 assets_frozen   INTEGER DEFAULT 0,
                 freeze_amount   REAL DEFAULT 0,
-                disposition     TEXT DEFAULT 'PENDING'
+                disposition     TEXT DEFAULT 'PENDING',
+                extra_json      TEXT
             )
         """)
+
+        # Ensure newer case metadata columns exist for existing databases
+        try:
+            existing_cols = {r[1] for r in cur.execute("PRAGMA table_info(cases)").fetchall()}
+            if "extra_json" not in existing_cols:
+                cur.execute("ALTER TABLE cases ADD COLUMN extra_json TEXT")
+        except Exception as e:
+            logger.warning(f"Could not verify/migrate cases.extra_json: {e}")
 
         # ── Case Notes ────────────────────────────────────────
         cur.execute("""
@@ -217,9 +226,28 @@ def load_cases() -> List[Dict]:
         cases = []
         for row in rows:
             case = dict(row)
+
+            # Merge append-only extended case state stored as JSON.
+            # This preserves report lineage, screening runs, evidence timeline,
+            # case versions, latest report pointers, and other future metadata.
+            extra_raw = case.pop("extra_json", None)
+            if extra_raw:
+                try:
+                    extra = json.loads(extra_raw)
+                    if isinstance(extra, dict):
+                        case.update(extra)
+                except Exception as e:
+                    logger.warning(f"Failed to parse cases.extra_json for {case.get('case_id')}: {e}")
+
             # Convert integer booleans back
             for bool_col in ("sar_filed","le_referral","assets_frozen"):
-                case[bool_col] = bool(case[bool_col])
+                case[bool_col] = bool(case.get(bool_col))
+
+            # Always expose append-only collections so UI panels never disappear.
+            case.setdefault("screening_runs", [])
+            case.setdefault("case_versions", [])
+            case.setdefault("evidence_log", [])
+            case.setdefault("reports", [])
 
             # Load notes
             notes = cur.execute(
@@ -288,13 +316,25 @@ def save_cases(cases: List[Dict]):
         for case in cases:
             cid = case["case_id"]
 
+            # Persist append-only / versioned investigation metadata in JSON.
+            # Keep the relational columns for dashboard sorting, but do not lose
+            # report lineage or rescreen history on reload.
+            _extra_keys = [
+                "screening_runs", "case_versions", "evidence_log", "reports",
+                "latest_report_path", "latest_report_version",
+                "latest_report_id", "latest_report_timestamp",
+                "global_sanctions_summary", "case_lineage",
+            ]
+            _extra_payload = {k: case.get(k) for k in _extra_keys if k in case}
+            extra_json = json.dumps(_extra_payload, default=str)
+
             # Upsert case row
             cur.execute("""
                 INSERT INTO cases
                     (case_id,name,type,priority,analyst,total_value,description,
                      status,created_at,updated_at,sar_filed,sar_date,
-                     le_referral,le_date,le_agency,assets_frozen,freeze_amount,disposition)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     le_referral,le_date,le_agency,assets_frozen,freeze_amount,disposition,extra_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(case_id) DO UPDATE SET
                     name=excluded.name, type=excluded.type,
                     priority=excluded.priority, analyst=excluded.analyst,
@@ -303,7 +343,8 @@ def save_cases(cases: List[Dict]):
                     sar_filed=excluded.sar_filed, sar_date=excluded.sar_date,
                     le_referral=excluded.le_referral, le_date=excluded.le_date,
                     le_agency=excluded.le_agency, assets_frozen=excluded.assets_frozen,
-                    freeze_amount=excluded.freeze_amount, disposition=excluded.disposition
+                    freeze_amount=excluded.freeze_amount, disposition=excluded.disposition,
+                    extra_json=excluded.extra_json
             """, (
                 cid,
                 case.get("name",""), case.get("type",""), case.get("priority","MEDIUM"),
@@ -314,6 +355,7 @@ def save_cases(cases: List[Dict]):
                 int(case.get("le_referral",False)), case.get("le_date"),
                 case.get("le_agency",""), int(case.get("assets_frozen",False)),
                 float(case.get("freeze_amount",0)), case.get("disposition","PENDING"),
+                extra_json,
             ))
 
             # Sync notes — delete and re-insert (notes are small)

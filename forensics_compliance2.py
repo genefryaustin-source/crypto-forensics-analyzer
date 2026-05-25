@@ -28,6 +28,19 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+try:
+    from forensics_case_rescreen import render_case_rescreen_ui
+except ImportError:
+    def render_case_rescreen_ui(cases, case_idx, df=None, save_cases_fn=None, analyst="system"):
+        st.info("Add forensics_case_rescreen.py to enable versioned case re-screening.")
+        return cases
+
+try:
+    from forensics_report_registry import render_case_reports_panel
+except ImportError:
+    def render_case_reports_panel(case, case_idx=0):
+        st.info("Add forensics_report_registry.py to enable case report history.")
+
 # ─────────────────────────────────────────────────────────────
 # 1. FATF TRAVEL RULE COMPLIANCE
 #    FATF Recommendation 16 requires VASPs to share sender
@@ -816,7 +829,7 @@ def render_offchain_payments_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
                     try:
                         img_bytes = _decode_file(pay["screenshot"])
                         st.image(img_bytes, caption=pay.get("screenshot_name","Screenshot"),
-                                 width='stretch')
+                                 use_container_width=True)
                     except Exception:
                         st.caption("⚠️ Screenshot could not be displayed")
 
@@ -947,7 +960,7 @@ def render_evidence_gallery_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
                     try:
                         img_bytes = _decode_file(ev["data"])
                         st.image(img_bytes, caption=ev.get("description") or ev["filename"],
-                                 width='stretch')
+                                 use_container_width=True)
                         st.caption(f"Added: {ev['added_at'][:10]}")
                         if ev.get("linked_address"):
                             st.caption(f"Linked: `{ev['linked_address'][:20]}…`")
@@ -1233,7 +1246,7 @@ def render_fraud_intelligence_panel(platform: str, amount: float = 0.0, search_h
             show_cols = [c for c in ["date_received","company","issue","sub_issue",
                                       "state","narrative","company_response"]
                          if c in cfpb_df.columns]
-            st.dataframe(cfpb_df[show_cols], width='stretch', hide_index=True)
+            st.dataframe(cfpb_df[show_cols], use_container_width=True, hide_index=True)
             st.download_button(
                 "⬇️ Export CFPB Results",
                 cfpb_df.to_csv(index=False).encode(),
@@ -1270,7 +1283,7 @@ def render_fraud_intelligence_panel(platform: str, amount: float = 0.0, search_h
             bbb_df = pd.DataFrame(records)
             show_cols = [c for c in ["date","scam_type","amount_lost","state","description"]
                          if c in bbb_df.columns]
-            st.dataframe(bbb_df[show_cols], width='stretch', hide_index=True)
+            st.dataframe(bbb_df[show_cols], use_container_width=True, hide_index=True)
             st.download_button(
                 "⬇️ Export BBB Results",
                 bbb_df.to_csv(index=False).encode(),
@@ -1395,7 +1408,7 @@ def render_mica_compliance_ui(df, get_key_fn=None):
 
             if not tr_df.empty:
                 show = [c for c in ["date","from_address","to_address","amount","token"] if c in tr_df.columns]
-                st.dataframe(tr_df[show].head(30), width='stretch', hide_index=True)
+                st.dataframe(tr_df[show].head(30), use_container_width=True, hide_index=True)
 
             # IVMS101 generation (EU version)
             st.markdown("**Generate IVMS101 Travel Rule Package (EU)**")
@@ -1467,7 +1480,7 @@ def render_mica_compliance_ui(df, get_key_fn=None):
             if issues:
                 st.warning(f"⚠️ {len(issues)} MiCA compliance issues found")
                 issues_df = pd.DataFrame(issues)
-                st.dataframe(issues_df, width='stretch', hide_index=True)
+                st.dataframe(issues_df, use_container_width=True, hide_index=True)
                 st.download_button("⬇️ Export MiCA Issues",
                     issues_df.to_csv(index=False).encode(),
                     "mica_compliance_issues.csv", "text/csv")
@@ -1517,7 +1530,7 @@ def render_mica_compliance_ui(df, get_key_fn=None):
                 st.rerun()
 
         if casp_data:
-            st.dataframe(pd.DataFrame(casp_data), width='stretch', hide_index=True)
+            st.dataframe(pd.DataFrame(casp_data), use_container_width=True, hide_index=True)
 
     with mica_tabs[4]:
         st.markdown("**High-Risk Country Screening**")
@@ -1551,7 +1564,7 @@ def render_mica_compliance_ui(df, get_key_fn=None):
             {"requirement":"Market Abuse Monitoring Report",     "frequency":"Monthly",   "deadline":"15 days after month end",  "status":"Pending"},
             {"requirement":"Capital Adequacy Report",            "frequency":"Quarterly", "deadline":"30 days after quarter end","status":"Pending"},
         ]
-        st.dataframe(pd.DataFrame(reporting_items), width='stretch', hide_index=True)
+        st.dataframe(pd.DataFrame(reporting_items), use_container_width=True, hide_index=True)
 
         st.markdown("**National Competent Authorities (NCAs) by key jurisdiction:**")
         ncas = {
@@ -1637,7 +1650,7 @@ def find_cross_case_entities(cases):
         ascending=False
     )
 
-def render_case_dashboard():
+def render_case_dashboard(df: Optional[pd.DataFrame] = None, get_key_fn=None):
     """Full regulatory case management dashboard."""
     cases = load_cases()
 
@@ -1703,6 +1716,10 @@ def render_case_dashboard():
                 "notes":         [],
                 "offchain_payments": [],
                 "evidence_files":    [],
+                "screening_runs":    [],
+                "case_versions":     [],
+                "evidence_log":      [],
+                "reports":           [],
             }
             cases.append(new_case)
             save_cases(cases)
@@ -1729,10 +1746,10 @@ def render_case_dashboard():
                 ec3.metric("Analyst",         case.get("analyst",""))
                 ec4.metric("Off-chain Pymts", len(case.get("offchain_payments",[])))
 
-                # Four tabs per case
-                ctab1, ctab2, ctab3, ctab4 = st.tabs([
+                # Case tabs
+                ctab1, ctab2, ctab3, ctab4, ctab5, ctab6 = st.tabs([
                     "📋 Status", "💳 Off-chain Payments",
-                    "📎 Evidence Files", "📝 Notes"
+                    "📎 Evidence Files", "📝 Notes", "🔄 Re-Screen & Reports", "📑 Reports"
                 ])
 
                 # ── Tab 1: Status ─────────────────────────────
@@ -1820,6 +1837,29 @@ def render_case_dashboard():
                     else:
                         st.info("No notes yet.")
 
+                # ── Tab 5: Versioned Re-Screening ─────────────
+                with ctab5:
+                    cases = render_case_rescreen_ui(
+                        cases,
+                        i,
+                        df=df,
+                        save_cases_fn=save_cases,
+                        analyst=case.get("analyst", "system"),
+                    )
+
+                # ── Tab 6: Registered Reports ─────────────────
+                with ctab6:
+                    render_case_reports_panel(cases[i], case_idx=i)
+
+        # ── All registered case reports ───────────────────────
+        st.markdown("---")
+        try:
+            from forensics_report_registry import render_all_case_reports_panel
+            with st.expander("📁 All Registered Case Reports", expanded=False):
+                render_all_case_reports_panel(cases)
+        except Exception as e:
+            st.caption(f"Report registry unavailable: {e}")
+
         # ── Cross-case entity linking ─────────────────────────
         st.markdown("---")
         st.markdown("### 🔗 Cross-Case Entity Linking")
@@ -1834,19 +1874,27 @@ def render_case_dashboard():
 
         if "cross_case_links" in st.session_state:
             links = st.session_state.cross_case_links
-            if links is not None and not links.empty:
+
+            if isinstance(links, pd.DataFrame) and not links.empty:
+                link_df = links.copy()
+                st.dataframe(link_df, use_container_width=True, hide_index=True)
+                st.info("💡 Same entity in multiple cases — consider joint SAR filing.")
+                st.download_button("⬇️ Export Entity Links",
+                    link_df.to_csv(index=False).encode(), "cross_case_entities.csv", "text/csv")
+
+            elif isinstance(links, dict) and links:
                 link_rows = []
                 for entity, case_ids in links.items():
-                    entity_type = "🏦 Account" if entity.startswith("account:") else "🔑 Address"
-                    entity_val  = entity.split(":",1)[1]
+                    entity_type = "🏦 Account" if str(entity).startswith("account:") else "🔑 Address"
+                    entity_val  = str(entity).split(":",1)[1] if ":" in str(entity) else str(entity)
                     link_rows.append({
                         "Type":       entity_type,
                         "Entity":     entity_val,
-                        "Appears in": ", ".join(case_ids),
+                        "Appears in": ", ".join(map(str, case_ids)),
                         "Case Count": len(case_ids),
                     })
                 link_df = pd.DataFrame(link_rows).sort_values("Case Count", ascending=False)
-                st.dataframe(link_df, width='stretch', hide_index=True)
+                st.dataframe(link_df, use_container_width=True, hide_index=True)
                 st.info("💡 Same entity in multiple cases — consider joint SAR filing.")
                 st.download_button("⬇️ Export Entity Links",
                     link_df.to_csv(index=False).encode(), "cross_case_entities.csv", "text/csv")
@@ -1895,7 +1943,7 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
 
             st.dataframe(required[["date","from_address","to_address","amount","token",
                                     "jurisdiction_note"]].head(50),
-                         width='stretch', hide_index=True)
+                         use_container_width=True, hide_index=True)
 
             # Generate IVMS101 package for selected transaction
             st.markdown("**Generate IVMS101 Package**")
@@ -1961,7 +2009,7 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
                     st.success(f"✅ Activity found on {len(results)} L2 chain(s)")
                     for chain, chain_df in results.items():
                         with st.expander(f"**{L2_CHAINS[chain]['name']}** — {len(chain_df)} transactions"):
-                            st.dataframe(chain_df.head(20), width='stretch', hide_index=True)
+                            st.dataframe(chain_df.head(20), use_container_width=True, hide_index=True)
                             # Merge into main dataset option
                             if st.button(f"➕ Add {chain} txs to dataset", key=f"add_{chain}"):
                                 st.session_state.raw_df = pd.concat(
@@ -2014,7 +2062,7 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
         if st.button("🔍 Scan Dataset for Multi-sig Patterns", key="run_ms_scan"):
             ms_df = detect_multisig_patterns(df)
             if not ms_df.empty:
-                st.dataframe(ms_df, width='stretch', hide_index=True)
+                st.dataframe(ms_df, use_container_width=True, hide_index=True)
             else:
                 st.info("No multi-sig patterns detected in dataset.")
 
@@ -2038,7 +2086,7 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
                 p1,p2 = st.columns(2)
                 p1.metric("Privacy Coin Entries/Exits", len(pc))
                 p2.metric("Atomic Swap Services",        len(at))
-                st.dataframe(pdf, width='stretch', hide_index=True)
+                st.dataframe(pdf, use_container_width=True, hide_index=True)
 
                 if not pc.empty:
                     st.error(
@@ -2084,7 +2132,7 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
             "Coverage":    ["400M+ addresses", "300M+ addresses", "200M+ addresses", "150M+ addresses"],
             "Speciality":  ["DeFi + CEX", "Risk scoring", "Sanctions focus", "Crypto-fiat"],
         }
-        st.dataframe(pd.DataFrame(pricing_data), width='stretch', hide_index=True)
+        st.dataframe(pd.DataFrame(pricing_data), use_container_width=True, hide_index=True)
 
     with comp2_tabs[5]:
-        render_case_dashboard()
+        render_case_dashboard(df=df, get_key_fn=get_key_fn)

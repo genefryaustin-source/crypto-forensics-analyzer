@@ -1573,6 +1573,22 @@ def render_pdf_ui(df: pd.DataFrame):
         "Only sections with actual data are included — empty analyses are skipped automatically."
     )
 
+    # Existing registered case reports created from Case Dashboard re-screening.
+    try:
+        from forensics_report_registry import render_all_case_reports_panel
+        cases_path = Path("regulatory_cases.json")
+        if cases_path.exists():
+            try:
+                existing_cases = json.loads(cases_path.read_text())
+            except Exception:
+                existing_cases = []
+            if isinstance(existing_cases, list):
+                with st.expander("📁 Open Existing Case Reports", expanded=True):
+                    render_all_case_reports_panel(existing_cases)
+                    st.caption("Reports listed here were generated from case re-screening or case report history.")
+    except Exception as e:
+        st.caption(f"Case report registry unavailable: {e}")
+
     # Show what's available
     available = {
         "Basic dataset & risk scoring": True,
@@ -1650,6 +1666,12 @@ def render_pdf_ui(df: pd.DataFrame):
                     mime="application/pdf",
                     type="primary",
                 )
+                st.session_state["latest_manual_pdf_report"] = {
+                    "filename": fname,
+                    "case_id": case_id_input,
+                    "generated_at": datetime.now().isoformat(),
+                    "size_bytes": len(pdf_buf.getvalue()),
+                }
                 st.success(f"✅ Report ready: {fname} — {included} sections included")
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
