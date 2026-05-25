@@ -1827,7 +1827,7 @@ def render_case_dashboard():
         if st.button("🔗 Find Cross-Case Links", type="primary", key="run_entity_link"):
             linked = find_cross_case_entities(cases)
             st.session_state.cross_case_links = linked
-            if linked:
+            if linked is not None and not linked.empty:
                 st.warning(f"⚠️ {len(linked)} entities found across multiple cases")
             else:
                 st.success("✅ No cross-case entity links found")
