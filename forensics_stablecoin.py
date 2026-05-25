@@ -521,7 +521,7 @@ def render_stablecoin_ui(df: pd.DataFrame = None):
             st.info(event['notes'])
 
             # Visualize depeg curve (synthetic since we don't have historical OHLC)
-            days  = pd.date_range(event["start"], event["end"], freq="6H")
+            days  = pd.date_range(event["start"], event["end"], freq="6h")
             n     = len(days)
             mid   = n // 2
             prices_curve = (
