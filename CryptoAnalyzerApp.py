@@ -1473,7 +1473,7 @@ if df is not None:
                              color_discrete_map={"CRITICAL":"#ff4444","HIGH":"#ff8800",
                                                  "MEDIUM":"#ffcc00","LOW":"#22c55e"})
             fig_pie.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_pie, width=True)
+            st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_b:
             st.markdown("**Volume by Token**")
