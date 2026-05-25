@@ -1566,7 +1566,76 @@ def render_mica_compliance_ui(df, get_key_fn=None):
         for country, nca in ncas.items():
             st.markdown(f"**{country}:** {nca}")
 
+def find_cross_case_entities(cases):
+    """
+    Simple cross-case entity linker.
 
+    Identifies shared:
+    - addresses
+    - wallets
+    - counterparties
+    - entities
+
+    across investigation cases.
+    """
+
+    import pandas as pd
+
+    if cases is None:
+        return pd.DataFrame()
+
+    if isinstance(cases, list):
+        cases = pd.DataFrame(cases)
+
+    if not isinstance(cases, pd.DataFrame):
+        return pd.DataFrame()
+
+    if cases.empty:
+        return pd.DataFrame()
+
+    possible_cols = [
+        "address",
+        "wallet",
+        "entity",
+        "counterparty",
+        "from_address",
+        "to_address",
+    ]
+
+    entity_col = None
+
+    for c in possible_cols:
+        if c in cases.columns:
+            entity_col = c
+            break
+
+    if entity_col is None:
+        return pd.DataFrame()
+
+    temp = cases.copy()
+
+    temp[entity_col] = (
+        temp[entity_col]
+        .fillna("")
+        .astype(str)
+        .str.lower()
+        .str.strip()
+    )
+
+    linked = (
+        temp.groupby(entity_col)
+        .size()
+        .reset_index(name="case_count")
+    )
+
+    linked = linked[
+        linked["case_count"] > 1
+    ]
+
+    return linked.sort_values(
+        "case_count",
+        ascending=False
+    )
 
 def render_case_dashboard():
     """Full regulatory case management dashboard."""
