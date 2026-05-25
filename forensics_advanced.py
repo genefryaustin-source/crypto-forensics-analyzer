@@ -711,7 +711,7 @@ def render_advanced_ui(df: pd.DataFrame, get_key_fn=None):
         if st.button("🔥 Generate Heatmap", key="run_hm"):
             fig_hm = plot_activity_heatmap(df, hm_addr.strip() or None)
             if fig_hm:
-                st.plotly_chart(fig_hm, width=True)
+                st.plotly_chart(fig_hm, use_container_width=True)
             else:
                 st.warning("No dated transactions found for this address.")
 
