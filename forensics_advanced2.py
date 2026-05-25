@@ -683,7 +683,7 @@ def render_advanced2_ui(df: pd.DataFrame, get_key_fn=None):
                         if c in tdf.columns]
                 st.dataframe(
                     tdf[show].style.background_gradient(subset=["confidence"], cmap="RdYlGn"),
-                    width='stretch', hide_index=True
+                    width=True, hide_index=True
                 )
                 st.download_button("⬇️ Export Tornado Links",
                     tdf.to_csv(index=False).encode(), "tornado_links.csv", "text/csv")
@@ -729,15 +729,57 @@ def render_advanced2_ui(df: pd.DataFrame, get_key_fn=None):
                     dominant_risk=("risk_level", lambda x: x.mode()[0] if len(x) else "LOW"),
                 ).reset_index().sort_values("total_out_volume", ascending=False)
                 st.markdown("**Cluster Summary:**")
-                st.dataframe(cluster_summary, width='stretch', hide_index=True)
+                st.dataframe(cluster_summary, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
                 # Visual
                 fig_gnn = plot_gnn_clusters(gdf, df)
                 if fig_gnn:
-                    st.plotly_chart(fig_gnn, width='stretch')
+                    st.plotly_chart(fig_gnn, width=True)
 
                 st.markdown("**Full Cluster Assignments:**")
-                st.dataframe(gdf, width='stretch', hide_index=True)
+                st.dataframe(gdf, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 st.download_button("⬇️ Export GNN Clusters",
                     gdf.to_csv(index=False).encode(), "gnn_clusters.csv", "text/csv")
             else:
@@ -809,7 +851,7 @@ def render_advanced2_ui(df: pd.DataFrame, get_key_fn=None):
                 if all_alerts:
                     mempool_log.dataframe(
                         pd.DataFrame(all_alerts[:20]),
-                        width='stretch', hide_index=True
+                        width=True, hide_index=True
                     )
 
                 time.sleep(mp_poll)
@@ -839,12 +881,54 @@ def render_advanced2_ui(df: pd.DataFrame, get_key_fn=None):
                         count=("amount","size"),
                         total_volume=("amount","sum")
                     ).reset_index()
-                    st.dataframe(proto_sum, width='stretch', hide_index=True)
+                    st.dataframe(proto_sum, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
                 st.markdown("**All Events:**")
                 show = [c for c in ["date","pattern","protocol","risk","from_address",
                                      "to_address","amount","token","note"] if c in sdf.columns]
-                st.dataframe(sdf[show], width='stretch', hide_index=True)
+                st.dataframe(sdf[show], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 st.download_button("⬇️ Export Atomic Swap Report",
                     sdf.to_csv(index=False).encode(), "atomic_swaps.csv", "text/csv")
 

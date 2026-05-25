@@ -1,0 +1,3 @@
+{"timestamp": "2026-05-24T12:11:23.657212", "action": "RANSOMWARE_SCREENING", "analyst": "System", "details": "301 hits: 301 Ransomwhere / 0 ThreatFox / 0 CISA", "data_hash": "", "entry_hash": "b40f317f766167d5"}
+{"timestamp": "2026-05-24T12:14:55.403936", "action": "RANSOMWARE_SCREENING", "analyst": "System", "details": "301 hits: 301 Ransomwhere / 0 ThreatFox / 0 CISA", "data_hash": "", "entry_hash": "4ef63aefdb352c45"}
+{"timestamp": "2026-05-24T19:05:38.454595", "action": "RANSOMWARE_SCREENING", "analyst": "System", "details": "301 hits: 301 Ransomwhere / 0 ThreatFox / 0 CISA", "data_hash": "", "entry_hash": "d92eeca8748f421e"}

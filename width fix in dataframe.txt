@@ -1,0 +1,24 @@
+st.dataframe(
+    res_df[["address", "type", "label", "source"]],
+    use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)

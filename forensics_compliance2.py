@@ -797,7 +797,7 @@ def render_offchain_payments_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
                     try:
                         img_bytes = _decode_file(pay["screenshot"])
                         st.image(img_bytes, caption=pay.get("screenshot_name","Screenshot"),
-                                 width='stretch')
+                                 width=True)
                     except Exception:
                         st.caption("⚠️ Screenshot could not be displayed")
 
@@ -928,7 +928,7 @@ def render_evidence_gallery_ui(cases: List[Dict], case_idx: int) -> List[Dict]:
                     try:
                         img_bytes = _decode_file(ev["data"])
                         st.image(img_bytes, caption=ev.get("description") or ev["filename"],
-                                 width='stretch')
+                                 width=True)
                         st.caption(f"Added: {ev['added_at'][:10]}")
                         if ev.get("linked_address"):
                             st.caption(f"Linked: `{ev['linked_address'][:20]}…`")
@@ -1214,7 +1214,28 @@ def render_fraud_intelligence_panel(platform: str, amount: float = 0.0, search_h
             show_cols = [c for c in ["date_received","company","issue","sub_issue",
                                       "state","narrative","company_response"]
                          if c in cfpb_df.columns]
-            st.dataframe(cfpb_df[show_cols], width='stretch', hide_index=True)
+            st.dataframe(cfpb_df[show_cols], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
             st.download_button(
                 "⬇️ Export CFPB Results",
                 cfpb_df.to_csv(index=False).encode(),
@@ -1251,7 +1272,28 @@ def render_fraud_intelligence_panel(platform: str, amount: float = 0.0, search_h
             bbb_df = pd.DataFrame(records)
             show_cols = [c for c in ["date","scam_type","amount_lost","state","description"]
                          if c in bbb_df.columns]
-            st.dataframe(bbb_df[show_cols], width='stretch', hide_index=True)
+            st.dataframe(bbb_df[show_cols], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
             st.download_button(
                 "⬇️ Export BBB Results",
                 bbb_df.to_csv(index=False).encode(),
@@ -1281,6 +1323,356 @@ def render_fraud_intelligence_panel(platform: str, amount: float = 0.0, search_h
             f"💡 Search tip: Filter CFPB results by amount — complaints near "
             f"${amount:,.2f} may indicate the same fraud ring."
         )
+
+
+
+
+# ─────────────────────────────────────────────────────────────
+# 9. MiCA COMPLIANCE MODULE
+#    EU Markets in Crypto-Assets Regulation (MiCA)
+#    Mandatory for EU VASPs from June 2024.
+#    Different requirements from FinCEN — EUR thresholds,
+#    ESMA reporting, EBA guidelines.
+# ─────────────────────────────────────────────────────────────
+
+MICA_TRAVEL_RULE_EUR = 1000   # EUR threshold (same as FATF but EUR)
+MICA_LARGE_TX_EUR    = 15000  # Enhanced due diligence threshold
+
+MICA_HIGH_RISK_COUNTRIES = [
+    "Afghanistan","Albania","Barbados","Burkina Faso","Cameroon",
+    "Cayman Islands","Democratic Republic of Congo","Gibraltar",
+    "Haiti","Iran","Jamaica","Jordan","Mali","Mozambique",
+    "Myanmar","Nigeria","Panama","Philippines","Russia",
+    "Senegal","South Africa","South Sudan","Syria","Tanzania",
+    "Trinidad and Tobago","Uganda","United Arab Emirates",
+    "Vanuatu","Vietnam","Yemen",
+]
+
+MICA_VASP_CATEGORIES = [
+    "Crypto-Asset Service Provider (CASP)",
+    "Asset-Referenced Token (ART) Issuer",
+    "E-Money Token (EMT) Issuer",
+    "Trading Platform Operator",
+    "Custody Provider",
+    "Exchange Service",
+    "Transfer Service",
+    "Advisory Service",
+    "Portfolio Management",
+]
+
+
+def render_mica_compliance_ui(df, get_key_fn=None):
+    """MiCA compliance module UI."""
+    st.markdown("### 🇪🇺 MiCA Compliance — EU Markets in Crypto-Assets Regulation")
+    st.caption(
+        "EU MiCA regulation (Markets in Crypto-Assets) mandatory from June 2024. "
+        "Applies to all Crypto-Asset Service Providers (CASPs) operating in the EU. "
+        "Different thresholds and reporting requirements from US FinCEN."
+    )
+
+    mica_tabs = st.tabs([
+        "📋 MiCA Overview",          "✈️ Travel Rule (EU)",
+        "🔍 Transaction Screening",  "📝 CASP Registration",
+        "⚠️ High-Risk Countries",    "📊 Reporting"
+    ])
+
+    with mica_tabs[0]:
+        st.markdown("**MiCA Key Requirements**")
+        requirements = {
+            "Travel Rule":        "Share originator/beneficiary info for transfers ≥ €1,000",
+            "EDD Threshold":      "Enhanced due diligence for transfers ≥ €15,000",
+            "CASP Authorisation": "All CASPs must be authorised in an EU member state",
+            "ART/EMT Rules":      "Asset-Referenced and E-Money Tokens have additional capital requirements",
+            "Market Abuse":       "Prohibition on insider dealing and market manipulation in crypto",
+            "Whitepaper":         "Mandatory crypto-asset whitepaper for issuers",
+            "ESMA Reporting":     "Report to European Securities and Markets Authority",
+            "EBA Guidelines":     "Follow European Banking Authority AML/CFT guidelines",
+        }
+        for req, desc in requirements.items():
+            st.markdown(f"**{req}:** {desc}")
+
+        st.markdown("---")
+        st.info(
+            "💡 MiCA applies to CASPs serving EU customers regardless of where the CASP is based. "
+            "Non-EU CASPs marketing to EU residents must comply or face enforcement."
+        )
+
+    with mica_tabs[1]:
+        st.markdown("**EU Travel Rule Compliance**")
+        st.caption(f"EU threshold: €{MICA_TRAVEL_RULE_EUR:,} (same amount as FATF but in EUR)")
+
+        if not df.empty:
+            # Identify travel rule transactions
+            if "usd_value" in df.columns:
+                tr_mask = df["usd_value"] >= MICA_TRAVEL_RULE_EUR
+            else:
+                tr_mask = df["amount"] >= MICA_TRAVEL_RULE_EUR
+
+            tr_df = df[tr_mask].copy()
+            edd_df = df[df["amount"] >= MICA_LARGE_TX_EUR].copy() if "usd_value" not in df.columns                      else df[df["usd_value"] >= MICA_LARGE_TX_EUR].copy()
+
+            m1,m2,m3 = st.columns(3)
+            m1.metric("Travel Rule Required", len(tr_df))
+            m2.metric("EDD Required (€15K+)", len(edd_df))
+            m3.metric("Total Transactions",   len(df))
+
+            if not tr_df.empty:
+                show = [c for c in ["date","from_address","to_address","amount","token"] if c in tr_df.columns]
+                st.dataframe(tr_df[show].head(30), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
+
+            # IVMS101 generation (EU version)
+            st.markdown("**Generate IVMS101 Travel Rule Package (EU)**")
+            eu_tx_hash    = st.text_input("Transaction hash", key="mica_tx")
+            eu_orig_name  = st.text_input("Originator full name", key="mica_orig")
+            eu_orig_addr  = st.text_input("Originator address",   key="mica_oaddr")
+            eu_bene_name  = st.text_input("Beneficiary name",     key="mica_bene")
+            eu_bene_addr  = st.text_input("Beneficiary address",  key="mica_baddr")
+            eu_orig_vasp  = st.text_input("Originating CASP",     key="mica_ovasp")
+            eu_bene_vasp  = st.text_input("Beneficiary CASP",     key="mica_bvasp")
+
+            if st.button("📦 Generate EU Travel Rule Package", type="primary", key="gen_mica_tr"):
+                package = {
+                    "standard":    "IVMS101 v1.0 / MiCA Travel Rule",
+                    "jurisdiction":"European Union",
+                    "threshold_eur": MICA_TRAVEL_RULE_EUR,
+                    "tx_hash":     eu_tx_hash,
+                    "originator":  {"name":eu_orig_name,"address":eu_orig_addr,"vasp":eu_orig_vasp},
+                    "beneficiary": {"name":eu_bene_name,"address":eu_bene_addr,"vasp":eu_bene_vasp},
+                    "generated_at": datetime.now().isoformat(),
+                    "regulation":  "MiCA Article 68 / Regulation (EU) 2023/1114",
+                }
+                pkg_json = json.dumps(package, indent=2)
+                st.download_button("⬇️ Download EU Travel Rule Package",
+                    pkg_json.encode(),
+                    f"mica_travel_rule_{eu_tx_hash[:8] if eu_tx_hash else 'package'}.json",
+                    "application/json")
+        else:
+            st.info("Load a dataset to screen for Travel Rule requirements.")
+
+    with mica_tabs[2]:
+        st.markdown("**MiCA Transaction Screening**")
+        st.caption("Screen transactions for MiCA compliance requirements and flag issues.")
+
+        if not df.empty:
+            issues = []
+
+            # Check for transactions above thresholds without metadata
+            if "usd_value" in df.columns:
+                large = df[df["usd_value"] >= MICA_TRAVEL_RULE_EUR]
+            else:
+                large = df[df["amount"] >= MICA_TRAVEL_RULE_EUR]
+
+            for _, row in large.iterrows():
+                issues.append({
+                    "issue":         "Travel Rule data required",
+                    "severity":      "HIGH",
+                    "regulation":    "MiCA Art. 68",
+                    "transaction":   row.get("tx_hash","")[:20],
+                    "amount":        row["amount"],
+                    "token":         row.get("token",""),
+                    "action":        "Collect and transmit originator/beneficiary IVMS101 data",
+                })
+
+            # Check for CRITICAL risk transactions
+            if "risk_level" in df.columns:
+                critical = df[df["risk_level"] == "CRITICAL"]
+                for _, row in critical.iterrows():
+                    issues.append({
+                        "issue":      "High-risk transaction — Enhanced Due Diligence required",
+                        "severity":   "HIGH",
+                        "regulation": "MiCA Art. 83 / 6AMLD",
+                        "transaction":row.get("tx_hash","")[:20],
+                        "amount":     row["amount"],
+                        "token":      row.get("token",""),
+                        "action":     "File STR (Suspicious Transaction Report) to local FIU within 24h",
+                    })
+
+            if issues:
+                st.warning(f"⚠️ {len(issues)} MiCA compliance issues found")
+                issues_df = pd.DataFrame(issues)
+                st.dataframe(issues_df, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
+                st.download_button("⬇️ Export MiCA Issues",
+                    issues_df.to_csv(index=False).encode(),
+                    "mica_compliance_issues.csv", "text/csv")
+            else:
+                st.success("✅ No MiCA compliance issues detected")
+        else:
+            st.info("Load a dataset to run MiCA screening.")
+
+    with mica_tabs[3]:
+        st.markdown("**CASP Registration Tracker**")
+        st.caption("Track your CASP authorisation status across EU member states.")
+
+        # Load/save CASP registrations
+        casp_file = Path("mica_casp_registrations.json")
+        casp_data = []
+        if casp_file.exists():
+            try:
+                casp_data = json.loads(casp_file.read_text())
+            except Exception:
+                pass
+
+        # Add new registration
+        with st.form("casp_form"):
+            cc1,cc2,cc3 = st.columns(3)
+            member_state  = cc1.selectbox("EU Member State", [
+                "Austria","Belgium","Bulgaria","Croatia","Cyprus","Czech Republic",
+                "Denmark","Estonia","Finland","France","Germany","Greece","Hungary",
+                "Ireland","Italy","Latvia","Lithuania","Luxembourg","Malta","Netherlands",
+                "Poland","Portugal","Romania","Slovakia","Slovenia","Spain","Sweden"
+            ], key="casp_state")
+            casp_category = cc2.selectbox("CASP Category", MICA_VASP_CATEGORIES, key="casp_cat")
+            auth_status   = cc3.selectbox("Status", ["Pending","Authorised","Rejected","Grandfathered"], key="casp_status")
+            auth_date     = st.date_input("Authorisation Date", key="casp_date")
+            auth_ref      = st.text_input("Reference Number", key="casp_ref")
+
+            if st.form_submit_button("➕ Add Registration"):
+                casp_data.append({
+                    "member_state":  member_state,
+                    "category":      casp_category,
+                    "status":        auth_status,
+                    "date":          str(auth_date),
+                    "reference":     auth_ref,
+                    "added_at":      datetime.now().isoformat()[:10],
+                })
+                casp_file.write_text(json.dumps(casp_data, indent=2))
+                st.success("✅ Registration added")
+                st.rerun()
+
+        if casp_data:
+            st.dataframe(pd.DataFrame(casp_data), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
+
+    with mica_tabs[4]:
+        st.markdown("**High-Risk Country Screening**")
+        st.caption(
+            "MiCA requires Enhanced Due Diligence (EDD) for transactions "
+            "involving addresses linked to high-risk jurisdictions. "
+            "Based on FATF grey/black lists and EU delegated acts."
+        )
+        st.markdown(f"**{len(MICA_HIGH_RISK_COUNTRIES)} high-risk jurisdictions tracked**")
+        hr_cols = st.columns(4)
+        for i, country in enumerate(MICA_HIGH_RISK_COUNTRIES):
+            hr_cols[i%4].markdown(f"- {country}")
+
+        # Check if any transactions might be linked to high-risk countries
+        st.markdown("---")
+        st.info(
+            "💡 To screen transactions against high-risk countries, "
+            "use the Geolocation Approximation feature to infer jurisdictions "
+            "from transaction timing patterns."
+        )
+
+    with mica_tabs[5]:
+        st.markdown("**MiCA Reporting Dashboard**")
+        st.caption("Track reporting obligations under MiCA.")
+
+        reporting_items = [
+            {"requirement":"Periodic Report to National CA",    "frequency":"Quarterly", "deadline":"45 days after quarter end","status":"Pending"},
+            {"requirement":"Annual Audit",                       "frequency":"Annual",    "deadline":"4 months after year end",  "status":"Pending"},
+            {"requirement":"STR to FIU",                         "frequency":"Ongoing",   "deadline":"24 hours of detection",    "status":"As needed"},
+            {"requirement":"Travel Rule Data Transmission",       "frequency":"Per tx",    "deadline":"Real-time",                "status":"Ongoing"},
+            {"requirement":"Market Abuse Monitoring Report",     "frequency":"Monthly",   "deadline":"15 days after month end",  "status":"Pending"},
+            {"requirement":"Capital Adequacy Report",            "frequency":"Quarterly", "deadline":"30 days after quarter end","status":"Pending"},
+        ]
+        st.dataframe(pd.DataFrame(reporting_items), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
+
+        st.markdown("**National Competent Authorities (NCAs) by key jurisdiction:**")
+        ncas = {
+            "Germany":     "BaFin (Federal Financial Supervisory Authority)",
+            "France":      "AMF (Autorité des marchés financiers)",
+            "Malta":       "MFSA (Malta Financial Services Authority)",
+            "Luxembourg":  "CSSF (Commission de Surveillance du Secteur Financier)",
+            "Netherlands": "AFM (Authority for the Financial Markets)",
+            "Spain":       "CNMV (National Securities Market Commission)",
+            "Ireland":     "CBI (Central Bank of Ireland)",
+        }
+        for country, nca in ncas.items():
+            st.markdown(f"**{country}:** {nca}")
+
 
 
 def render_case_dashboard():
@@ -1466,6 +1858,58 @@ def render_case_dashboard():
                     else:
                         st.info("No notes yet.")
 
+        # ── Cross-case entity linking ─────────────────────────
+        st.markdown("---")
+        st.markdown("### 🔗 Cross-Case Entity Linking")
+        st.caption("Identifies accounts or addresses appearing in multiple cases.")
+        if st.button("🔗 Find Cross-Case Links", type="primary", key="run_entity_link"):
+            linked = find_cross_case_entities(cases)
+            st.session_state.cross_case_links = linked
+            if linked:
+                st.warning(f"⚠️ {len(linked)} entities found across multiple cases")
+            else:
+                st.success("✅ No cross-case entity links found")
+
+        if "cross_case_links" in st.session_state:
+            links = st.session_state.cross_case_links
+            if links:
+                link_rows = []
+                for entity, case_ids in links.items():
+                    entity_type = "🏦 Account" if entity.startswith("account:") else "🔑 Address"
+                    entity_val  = entity.split(":",1)[1]
+                    link_rows.append({
+                        "Type":       entity_type,
+                        "Entity":     entity_val,
+                        "Appears in": ", ".join(case_ids),
+                        "Case Count": len(case_ids),
+                    })
+                link_df = pd.DataFrame(link_rows).sort_values("Case Count", ascending=False)
+                st.dataframe(link_df, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
+                st.info("💡 Same entity in multiple cases — consider joint SAR filing.")
+                st.download_button("⬇️ Export Entity Links",
+                    link_df.to_csv(index=False).encode(), "cross_case_entities.csv", "text/csv")
+
         # Export all cases
         st.markdown("---")
         cases_df = pd.DataFrame([{k:v for k,v in c.items() if k != "notes"} for c in cases])
@@ -1510,7 +1954,28 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
 
             st.dataframe(required[["date","from_address","to_address","amount","token",
                                     "jurisdiction_note"]].head(50),
-                         width='stretch', hide_index=True)
+                         use_container_width=True,
+                         height=480,
+                         hide_index=True,
+                         column_config={
+                             "address": st.column_config.TextColumn(
+                                 "Address",
+                                 width="large"
+                             ),
+                             "type": st.column_config.TextColumn(
+                                 "Type",
+                                 width="medium"
+                             ),
+                             "label": st.column_config.TextColumn(
+                                 "Label",
+                                 width="large"
+                             ),
+                             "source": st.column_config.TextColumn(
+                                 "Source",
+                                 width="medium"
+                             ),
+                         }
+                         )
 
             # Generate IVMS101 package for selected transaction
             st.markdown("**Generate IVMS101 Package**")
@@ -1576,7 +2041,28 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
                     st.success(f"✅ Activity found on {len(results)} L2 chain(s)")
                     for chain, chain_df in results.items():
                         with st.expander(f"**{L2_CHAINS[chain]['name']}** — {len(chain_df)} transactions"):
-                            st.dataframe(chain_df.head(20), width='stretch', hide_index=True)
+                            st.dataframe(chain_df.head(20), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                             # Merge into main dataset option
                             if st.button(f"➕ Add {chain} txs to dataset", key=f"add_{chain}"):
                                 st.session_state.raw_df = pd.concat(
@@ -1629,7 +2115,28 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
         if st.button("🔍 Scan Dataset for Multi-sig Patterns", key="run_ms_scan"):
             ms_df = detect_multisig_patterns(df)
             if not ms_df.empty:
-                st.dataframe(ms_df, width='stretch', hide_index=True)
+                st.dataframe(ms_df, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
             else:
                 st.info("No multi-sig patterns detected in dataset.")
 
@@ -1653,7 +2160,28 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
                 p1,p2 = st.columns(2)
                 p1.metric("Privacy Coin Entries/Exits", len(pc))
                 p2.metric("Atomic Swap Services",        len(at))
-                st.dataframe(pdf, width='stretch', hide_index=True)
+                st.dataframe(pdf, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
                 if not pc.empty:
                     st.error(
@@ -1699,7 +2227,28 @@ def render_compliance2_ui(df: pd.DataFrame, get_key_fn=None):
             "Coverage":    ["400M+ addresses", "300M+ addresses", "200M+ addresses", "150M+ addresses"],
             "Speciality":  ["DeFi + CEX", "Risk scoring", "Sanctions focus", "Crypto-fiat"],
         }
-        st.dataframe(pd.DataFrame(pricing_data), width='stretch', hide_index=True)
+        st.dataframe(pd.DataFrame(pricing_data), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
     with comp2_tabs[5]:
         render_case_dashboard()

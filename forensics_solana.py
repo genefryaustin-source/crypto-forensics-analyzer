@@ -385,7 +385,28 @@ def render_solana_ui():
                     sol_df = fingerprint_solana_programs(sol_df)
                     st.session_state.sol_df = sol_df
 
-                    st.dataframe(sol_df.head(50), width='stretch', hide_index=True)
+                    st.dataframe(sol_df.head(50), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                     st.download_button("⬇️ Export Solana Transactions",
                         sol_df.to_csv(index=False).encode(), "solana_txs.csv", "text/csv")
 
@@ -410,7 +431,28 @@ def render_solana_ui():
                 holdings = get_spl_token_holdings(th_addr.strip())
             if not holdings.empty:
                 st.metric("Tokens Held", len(holdings))
-                st.dataframe(holdings, width='stretch', hide_index=True)
+                st.dataframe(holdings, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 st.download_button("⬇️ Export Holdings",
                     holdings.to_csv(index=False).encode(), "sol_holdings.csv", "text/csv")
             else:
@@ -425,7 +467,28 @@ def render_solana_ui():
                     tx_count=("amount","size"),
                     total_volume=("amount","sum")
                 ).reset_index().sort_values("total_volume", ascending=False)
-                st.dataframe(prog_summary, width='stretch', hide_index=True)
+                st.dataframe(prog_summary, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
                 high_risk = prog_summary[prog_summary["program_risk"].isin(["HIGH","CRITICAL"])]
                 if not high_risk.empty:

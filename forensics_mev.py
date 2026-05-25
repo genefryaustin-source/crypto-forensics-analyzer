@@ -499,6 +499,119 @@ def check_honeypot(token_address: str, chain: str = "ethereum") -> Dict:
 # STREAMLIT UI
 # ─────────────────────────────────────────────────────────────
 
+
+
+# ─────────────────────────────────────────────────────────────
+# 5. ENHANCED NFT PUMP-AND-DUMP DETECTION
+#    Coordinated floor price manipulation, fake rarity,
+#    bid manipulation — more sophisticated than wash trading.
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False)
+def detect_nft_pump_dump(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detect coordinated NFT pump-and-dump schemes.
+
+    Patterns beyond simple wash trading:
+    1. Floor price inflation: coordinated bids at increasing prices
+    2. Rarity manipulation: same token trading at 10x normal floor
+    3. Coordinated exit: multiple wallets dump same collection within 24h
+    4. Fake volume: circular trades through 3+ wallets to inflate rankings
+    """
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date"]).sort_values("date")
+
+    findings = []
+
+    for token in df["token"].unique():
+        if token.upper() in ("ETH","BTC","USDT","USDC","BNB","SOL","MATIC"):
+            continue
+
+        t_df = df[df["token"] == token].sort_values("date")
+        if len(t_df) < 5:
+            continue
+
+        amounts = t_df["amount"].values
+        dates   = t_df["date"].values
+
+        # ── Pattern 1: Floor Price Inflation ─────────────────
+        # Prices consistently increasing with coordinated buyers
+        if len(amounts) >= 5:
+            increases = sum(1 for i in range(1, len(amounts)) if amounts[i] > amounts[i-1])
+            increase_ratio = increases / (len(amounts) - 1)
+
+            unique_buyers = t_df["from_address"].nunique()
+            unique_sellers = t_df["to_address"].nunique()
+
+            if increase_ratio > 0.75 and unique_buyers <= 3:
+                price_gain = (amounts[-1] - amounts[0]) / max(amounts[0], 0.001)
+                findings.append({
+                    "pattern":         "FLOOR_PRICE_INFLATION",
+                    "token":           token,
+                    "coordinated_wallets": unique_buyers,
+                    "price_increase":  f"{price_gain:.0%}",
+                    "tx_count":        len(t_df),
+                    "first_price":     amounts[0],
+                    "last_price":      amounts[-1],
+                    "date_start":      str(t_df["date"].min())[:10],
+                    "date_end":        str(t_df["date"].max())[:10],
+                    "severity":        min(100, int(price_gain * 30 + unique_buyers * 5)),
+                    "note":            f"{unique_buyers} wallets inflated {token} floor by {price_gain:.0%}",
+                })
+
+        # ── Pattern 2: Circular NFT Trading (3+ wallet ring) ──
+        senders   = set(t_df["from_address"])
+        receivers = set(t_df["to_address"])
+        common    = senders & receivers   # Wallets that both send and receive
+
+        if len(common) >= 3:
+            # Check if they form a ring: A→B→C→A
+            ring_vol = t_df[
+                t_df["from_address"].isin(common) & t_df["to_address"].isin(common)
+            ]["amount"].sum()
+
+            if ring_vol > 0:
+                findings.append({
+                    "pattern":         "CIRCULAR_NFT_RING",
+                    "token":           token,
+                    "ring_size":       len(common),
+                    "ring_volume":     ring_vol,
+                    "tx_count":        len(t_df),
+                    "date_start":      str(t_df["date"].min())[:10],
+                    "date_end":        str(t_df["date"].max())[:10],
+                    "severity":        min(100, len(common) * 15 + 30),
+                    "note":            f"{len(common)}-wallet circular trading ring — creates fake volume/price history",
+                })
+
+        # ── Pattern 3: Coordinated Dump ───────────────────────
+        # Multiple new sellers appear within 48h, all at peak price
+        if len(amounts) >= 8:
+            peak_price  = amounts.max()
+            peak_idx    = amounts.argmax()
+            post_peak   = t_df.iloc[peak_idx:]
+            unique_post = post_peak["from_address"].nunique()
+
+            if unique_post >= 4 and peak_idx > len(amounts) // 3:
+                span = (post_peak["date"].max() - post_peak["date"].min()).total_seconds() / 3600
+                if span <= 48:
+                    findings.append({
+                        "pattern":          "COORDINATED_NFT_DUMP",
+                        "token":            token,
+                        "peak_price":       peak_price,
+                        "dumpers":          unique_post,
+                        "dump_span_hours":  round(span, 1),
+                        "tx_count":         len(t_df),
+                        "date_start":       str(post_peak["date"].min())[:10],
+                        "severity":         min(100, unique_post * 15 + 20),
+                        "note":             f"{unique_post} wallets sold at peak price within {span:.0f}h — coordinated dump",
+                    })
+
+    logger.info(f"✅ NFT pump-dump detection: {len(findings)} findings")
+    return pd.DataFrame(findings).drop_duplicates(subset=["token","pattern"]) if findings else pd.DataFrame()
+
+
+
 def render_mev_ui(df: pd.DataFrame):
     """Market manipulation intelligence UI."""
     st.markdown("### ⚔️ Market Manipulation Intelligence")
@@ -510,7 +623,8 @@ def render_mev_ui(df: pd.DataFrame):
 
     mev_tabs = st.tabs([
         "🥪 MEV / Sandwich Attacks", "🪤 Rug Pull Detection",
-        "🍯 Honeypot Checker",       "📉 Coordinated Dumps"
+        "🍯 Honeypot Checker",       "📉 Coordinated Dumps",
+        "🎨 NFT Pump & Dump"
     ])
 
     with mev_tabs[0]:
@@ -546,7 +660,28 @@ def render_mev_ui(df: pd.DataFrame):
                 show = [c for c in ["date","attack_type","bot_address","victim_address",
                                      "token","estimated_profit","severity","confidence"]
                         if c in mdf.columns]
-                st.dataframe(mdf[show], width='stretch', hide_index=True)
+                st.dataframe(mdf[show], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 st.download_button("⬇️ Export MEV Report",
                     mdf.to_csv(index=False).encode(), "mev_attacks.csv", "text/csv")
             else:
@@ -637,7 +772,28 @@ def render_mev_ui(df: pd.DataFrame):
                     if not honeypots.empty:
                         st.error(f"🚨 {len(honeypots)} honeypot contracts found!")
                     st.dataframe(hp_df[["address","is_honeypot","buy_tax","sell_tax","risk_level"]],
-                                 width='stretch', hide_index=True)
+                                 use_container_width=True,
+                                 height=480,
+                                 hide_index=True,
+                                 column_config={
+                                     "address": st.column_config.TextColumn(
+                                         "Address",
+                                         width="large"
+                                     ),
+                                     "type": st.column_config.TextColumn(
+                                         "Type",
+                                         width="medium"
+                                     ),
+                                     "label": st.column_config.TextColumn(
+                                         "Label",
+                                         width="large"
+                                     ),
+                                     "source": st.column_config.TextColumn(
+                                         "Source",
+                                         width="medium"
+                                     ),
+                                 }
+                                 )
                 else:
                     st.info("No 0x contract addresses found in token column.")
 
@@ -677,3 +833,52 @@ def render_mev_ui(df: pd.DataFrame):
                     ddf.to_csv(index=False).encode(), "coordinated_dumps.csv", "text/csv")
             else:
                 st.success("✅ No coordinated selling patterns detected.")
+
+
+    with mev_tabs[4]:
+        st.markdown("**NFT Pump & Dump Detection**")
+        st.caption(
+            "Detects coordinated NFT price manipulation: floor price inflation by small "
+            "wallet groups, circular trading rings creating fake volume, and coordinated "
+            "dumps at peak price. More sophisticated than simple wash trading detection."
+        )
+        if st.button("🎨 Detect NFT Pump & Dump", type="primary", key="run_nft_pd"):
+            with st.spinner("Scanning NFT trading patterns…"):
+                nft_pd_df = detect_nft_pump_dump(df)
+                st.session_state.nft_pd_df = nft_pd_df
+            if not nft_pd_df.empty:
+                st.error(f"🚨 {len(nft_pd_df)} NFT pump-and-dump patterns detected")
+            else:
+                st.success("✅ No NFT pump-and-dump patterns detected.")
+
+        if "nft_pd_df" in st.session_state and not st.session_state.nft_pd_df.empty:
+            npdf = st.session_state.nft_pd_df
+            pattern_counts = npdf["pattern"].value_counts()
+            for pat, cnt in pattern_counts.items():
+                st.markdown(f"- **{pat}**: {cnt} token(s)")
+            cols_show = [c for c in ["pattern","token","severity","note","tx_count",
+                                      "date_start","date_end"] if c in npdf.columns]
+            st.dataframe(npdf[cols_show], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
+            st.download_button("⬇️ Export NFT P&D Report",
+                npdf.to_csv(index=False).encode(), "nft_pump_dump.csv", "text/csv")

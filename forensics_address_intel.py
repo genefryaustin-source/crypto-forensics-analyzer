@@ -1163,7 +1163,16 @@ def render_address_intel_ui(df: pd.DataFrame):
         if "cio_summary" in st.session_state:
             s = st.session_state.cio_summary
             if not s.empty:
-                st.dataframe(s, width='stretch', hide_index=True)
+                st.dataframe(s, use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
                 st.download_button("⬇️ Export Clusters CSV",
                     s.to_csv(index=False).encode(), "entity_clusters.csv", "text/csv")
             else:
@@ -1187,14 +1196,32 @@ def render_address_intel_ui(df: pd.DataFrame):
             type_counts.columns = ["Type","Count"]
             c1, c2 = st.columns([1,2])
             with c1:
-                st.dataframe(type_counts, width='stretch', hide_index=True)
+                st.dataframe(type_counts, use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
             with c2:
                 st.bar_chart(type_counts.set_index("Type")["Count"])
 
             st.markdown("**Full Classification Results**")
             show_cols = [c for c in ["address","type","label","confidence",
                                       "tx_count","out_volume","tokens_used"] if c in cdf.columns]
-            st.dataframe(cdf[show_cols], width='stretch', hide_index=True)
+            st.dataframe(cdf[show_cols], use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
             st.download_button("⬇️ Export Classifications",
                 cdf.to_csv(index=False).encode(), "address_types.csv", "text/csv")
 
@@ -1218,11 +1245,41 @@ def render_address_intel_ui(df: pd.DataFrame):
                     tx_count=("amount","size"),
                     total_volume=("amount","sum")
                 ).reset_index().sort_values("total_volume", ascending=False)
-                st.dataframe(exc_summary, width='stretch', hide_index=True)
+                st.dataframe(exc_summary, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
                 show = [c for c in ["date","from_address","to_address","amount",
                                      "token","exchange_name","risk_level"] if c in edf.columns]
-                st.dataframe(edf[show], width='stretch', hide_index=True)
+                st.dataframe(edf[show], use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
                 st.download_button("⬇️ Export Exchange Endpoints",
                     edf[show].to_csv(index=False).encode(),
                     "exchange_endpoints.csv", "text/csv")
@@ -1284,7 +1341,28 @@ def render_address_intel_ui(df: pd.DataFrame):
                     show = [c for c in ["date","from_address","to_address","amount","token",
                                         "intel_sources","goplus_labels","risk_level"]
                             if c in hits.columns]
-                    st.dataframe(hits[show], width='stretch', hide_index=True)
+                    st.dataframe(hits[show], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                     st.download_button("⬇️ Export Intel Hits",
                         hits[show].to_csv(index=False).encode(),
                         "intel_hits.csv", "text/csv")
@@ -1305,7 +1383,28 @@ def render_address_intel_ui(df: pd.DataFrame):
                                 scols = [c for c in ["from_address","to_address","amount","token"] + extra
                                          if c in src_hits.columns]
                                 st.dataframe(src_hits[scols].head(20),
-                                             width='stretch', hide_index=True)
+                                             use_container_width=True,
+                                             height=480,
+                                             hide_index=True,
+                                             column_config={
+                                                 "address": st.column_config.TextColumn(
+                                                     "Address",
+                                                     width="large"
+                                                 ),
+                                                 "type": st.column_config.TextColumn(
+                                                     "Type",
+                                                     width="medium"
+                                                 ),
+                                                 "label": st.column_config.TextColumn(
+                                                     "Label",
+                                                     width="large"
+                                                 ),
+                                                 "source": st.column_config.TextColumn(
+                                                     "Source",
+                                                     width="medium"
+                                                 ),
+                                             }
+                                             )
                                 st.markdown("---")
 
         # ── Individual source buttons ─────────────────────────
@@ -1346,7 +1445,28 @@ def render_address_intel_ui(df: pd.DataFrame):
             if not dhits.empty:
                 show = [c for c in ["date","from_address","to_address","amount",
                                      "token","darknet_entity","risk_level"] if c in dhits.columns]
-                st.dataframe(dhits[show], width='stretch', hide_index=True)
+                st.dataframe(dhits[show], use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
     with ai_tabs[4]:
         st.markdown("**Change Address Detection**")
@@ -1364,7 +1484,28 @@ def render_address_intel_ui(df: pd.DataFrame):
                 st.success("✅ No change addresses detected")
 
         if "chg_df" in st.session_state and not st.session_state.chg_df.empty:
-            st.dataframe(st.session_state.chg_df, width='stretch', hide_index=True)
+            st.dataframe(st.session_state.chg_df, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
             st.download_button("⬇️ Export Change Addresses",
                 st.session_state.chg_df.to_csv(index=False).encode(),
                 "change_addresses.csv", "text/csv")

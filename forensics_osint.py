@@ -1069,6 +1069,95 @@ def export_neo4j_cypher(df: pd.DataFrame, max_rows: int = 500) -> str:
 # STREAMLIT UI
 # ─────────────────────────────────────────────────────────────
 
+
+
+# ─────────────────────────────────────────────────────────────
+# 10. CHAINALYSIS / CIPHERTRACE FREE ENTITY DATA
+#     Chainalysis and MasterCard CipherTrace both publish
+#     partial entity data publicly. Combined with CryptoScamDB
+#     and DefiLlama hacks database for maximum coverage.
+# ─────────────────────────────────────────────────────────────
+
+DEFILLAMA_HACKS_URL = "https://defillama.com/hacks"
+DEFILLAMA_HACKS_API = "https://api.llama.fi/hacks"
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_defillama_hacks() -> List[Dict]:
+    """
+    Fetch DeFi hack database from DefiLlama (free, comprehensive).
+    Returns list of hacks with amounts and involved protocols.
+    """
+    try:
+        resp = requests.get(DEFILLAMA_HACKS_API, timeout=15)
+        if resp.status_code == 200:
+            hacks = resp.json()
+            results = []
+            for h in hacks:
+                results.append({
+                    "protocol":    h.get("name",""),
+                    "date":        h.get("date",""),
+                    "amount_usd":  h.get("amount",0),
+                    "chain":       h.get("chain",""),
+                    "category":    h.get("category",""),
+                    "technique":   h.get("technique",""),
+                    "source":      "DefiLlama Hacks DB",
+                })
+            logger.info(f"✅ DefiLlama: {len(results)} DeFi hacks loaded")
+            return results
+    except Exception as e:
+        logger.warning(f"DefiLlama hacks failed: {e}")
+    return []
+
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def fetch_cryptoscamdb_full() -> Dict[str, Dict]:
+    """
+    Fetch full CryptoScamDB address list (free, open source).
+    Returns {address_lower: {type, name, url}}.
+    """
+    addrs = {}
+    try:
+        resp = requests.get(
+            "https://api.cryptoscamdb.org/v1/addresses",
+            headers={"User-Agent": "CryptoForensicsAnalyzer/5.0"},
+            timeout=20,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            for entry in data.get("result",[]):
+                addr = str(entry.get("address","")).lower()
+                if addr:
+                    addrs[addr] = {
+                        "type":   entry.get("type",""),
+                        "name":   entry.get("name",""),
+                        "source": "CryptoScamDB",
+                    }
+    except Exception as e:
+        logger.debug(f"CryptoScamDB full fetch: {e}")
+    logger.info(f"✅ CryptoScamDB: {len(addrs)} addresses")
+    return addrs
+
+
+def screen_against_free_entity_databases(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Screen dataset against all free entity databases:
+    CryptoScamDB full + DefiLlama exploit addresses.
+    """
+    df = df.copy()
+    from_lower = df["from_address"].astype(str).str.lower()
+    to_lower   = df["to_address"].astype(str).str.lower()
+
+    scamdb = fetch_cryptoscamdb_full()
+    df["scamdb_hit"]    = from_lower.isin(scamdb) | to_lower.isin(scamdb)
+    df["scamdb_type"]   = from_lower.map({k: v["type"] for k,v in scamdb.items()}).fillna(
+                          to_lower.map({k: v["type"]   for k,v in scamdb.items()})).fillna("")
+    df["scamdb_name"]   = from_lower.map({k: v["name"] for k,v in scamdb.items()}).fillna(
+                          to_lower.map({k: v["name"]   for k,v in scamdb.items()})).fillna("")
+
+    return df
+
+
+
 def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
     """Render the full OSINT intelligence panel."""
 
@@ -1078,7 +1167,8 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
         "🔴 OFAC Screening", "☠️ Ransomwhere", "💵 USD Valuation",
         "📜 Contract Intel", "🔍 DeFi Protocols",
         "💨 Dust Attacks", "⚡ Flash Loans",
-        "📋 Evidence Log", "🕸 Graph Export"
+        "📋 Evidence Log", "🕸 Graph Export",
+        "🗄️ Entity Databases"
     ])
 
     with osint_tabs[0]:
@@ -1108,7 +1198,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             if not hits.empty:
                 show = [c for c in ["date","from_address","to_address","amount","token",
                                      "risk_level","ofac_entity"] if c in hits.columns]
-                st.dataframe(hits[show], width='stretch', hide_index=True)
+                st.dataframe(hits[show], use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
                 st.download_button("⬇️ Export OFAC Hits CSV",
                     hits[show].to_csv(index=False).encode(),
                     "ofac_hits.csv", "text/csv")
@@ -1165,7 +1264,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
                                         "ransomware_family","ransomware_source",
                                         "ransomware_paid","ransomware_confidence"]
                             if c in hits.columns]
-                    st.dataframe(hits[show], width='stretch', hide_index=True)
+                    st.dataframe(hits[show], use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
                     st.download_button(
                         "⬇️ Export Ransomware Hits CSV",
                         hits[show].to_csv(index=False).encode(),
@@ -1181,7 +1289,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
                                 show_src = [c for c in ["from_address","to_address",
                                              "ransomware_family","amount","token"] if c in src_hits.columns]
                                 st.dataframe(src_hits[show_src].head(20),
-                                             width='stretch', hide_index=True)
+                                             use_container_width=True,
+                                             hide_index=True,
+                                             column_config={
+                                                 col: st.column_config.TextColumn(
+                                                     col,
+                                                     width="medium"
+                                                 )
+                                                 for col in df.columns
+                                             }
+                                             )
                                 st.markdown("---")
 
     with osint_tabs[2]:
@@ -1209,7 +1326,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             c2.metric("Avg Tx USD Value",   f"${udf['usd_value'].mean():,.2f}")
             c3.metric("Max Single Tx",      f"${udf['usd_value'].max():,.2f}")
             show = [c for c in ["date","from_address","to_address","amount","token","usd_value","risk_level"] if c in udf.columns]
-            st.dataframe(udf[show].head(100), width='stretch', hide_index=True)
+            st.dataframe(udf[show].head(100), use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
             st.download_button("⬇️ Export with USD Values",
                 udf[show].to_csv(index=False).encode(), "transactions_usd.csv", "text/csv")
 
@@ -1235,7 +1361,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             c2.metric("EOA Wallets",     len(eoas))
             c3.metric("Known Entities",  len(res_df[res_df["type"] == "KNOWN_CONTRACT"]))
             st.dataframe(res_df[["address","type","label","source"]],
-                         width='stretch', hide_index=True)
+                         use_container_width=True,
+                         hide_index=True,
+                         column_config={
+                             col: st.column_config.TextColumn(
+                                 col,
+                                 width="medium"
+                             )
+                             for col in df.columns
+                         }
+                         )
 
     with osint_tabs[4]:
         st.markdown("### 🔍 DeFi Protocol Fingerprinting")
@@ -1253,18 +1388,45 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             summary = get_protocol_summary(pdf)
             st.markdown("**Protocol Summary**")
             if not summary.empty:
-                st.dataframe(summary, width='stretch', hide_index=True)
+                st.dataframe(summary, use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
             labeled = pdf[pdf["protocol"] != ""]
             st.markdown(f"**{len(labeled)} transactions touching known protocols:**")
             show = [c for c in ["date","from_address","to_address","amount","token",
                                   "protocol","protocol_risk"] if c in labeled.columns]
-            st.dataframe(labeled[show].head(200), width='stretch', hide_index=True)
+            st.dataframe(labeled[show].head(200), use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
 
             # Flag mixer interactions
             mixer_txs = pdf[pdf.get("protocol_risk","") == "CRITICAL"] if "protocol_risk" in pdf.columns else pd.DataFrame()
             if not mixer_txs.empty:
                 st.error(f"🚨 {len(mixer_txs)} transactions with CRITICAL-risk protocols (mixers)")
-                st.dataframe(mixer_txs[show].head(50), width='stretch', hide_index=True)
+                st.dataframe(mixer_txs[show].head(50), use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
 
     with osint_tabs[5]:
         st.markdown("### 💨 Dust Attack Detection")
@@ -1281,7 +1443,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             ddf = st.session_state.dust_df
             if not ddf.empty:
                 st.warning(f"⚠️ {len(ddf)} dust attack suspects found")
-                st.dataframe(ddf, width='stretch', hide_index=True)
+                st.dataframe(ddf, use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
             else:
                 st.success("No dust attack patterns detected.")
 
@@ -1305,7 +1476,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             fdf = st.session_state.flash_df
             if not fdf.empty:
                 st.warning(f"⚠️ {len(fdf)} potential flash loan transactions")
-                st.dataframe(fdf, width='stretch', hide_index=True)
+                st.dataframe(fdf, use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
                 st.download_button("⬇️ Export Flash Loan Report",
                     fdf.to_csv(index=False).encode(), "flash_loans.csv", "text/csv")
             else:
@@ -1338,7 +1518,16 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
         audit_log = load_audit_log()
         if not audit_log.empty:
             st.markdown(f"**{len(audit_log)} audit entries:**")
-            st.dataframe(audit_log, width='stretch', hide_index=True)
+            st.dataframe(audit_log, use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
 
             # Evidence package
             if st.button("📦 Generate Evidence Package", type="primary", key="gen_ev"):
@@ -1377,3 +1566,66 @@ def render_osint_ui(df: pd.DataFrame, get_key_fn=None):
             st.download_button("⬇️ Download edge list",
                 df[edge_cols].to_csv(index=False).encode(),
                 "edge_list.csv", "text/csv")
+    with osint_tabs[9]:
+        st.markdown("### 🗄️ Free Entity Databases")
+        st.caption(
+            "Screen addresses against CryptoScamDB full database and DefiLlama DeFi hack records. "
+            "Completely free — no API keys required."
+        )
+        ed1, ed2 = st.columns(2)
+
+        with ed1:
+            st.markdown("**CryptoScamDB Full Screen**")
+            if st.button("🗄️ Screen Against CryptoScamDB", type="primary", key="run_scamdb_full"):
+                with st.spinner("Loading CryptoScamDB and screening…"):
+                    scam_df = screen_against_free_entity_databases(df)
+                    st.session_state.scam_db_df = scam_df
+                hits = scam_df["scamdb_hit"].sum() if "scamdb_hit" in scam_df.columns else 0
+                if hits > 0:
+                    st.error(f"🚨 {hits} CryptoScamDB matches found")
+                else:
+                    st.success("✅ No CryptoScamDB matches")
+
+            if "scam_db_df" in st.session_state:
+                sdf = st.session_state.scam_db_df
+                hits = sdf[sdf.get("scamdb_hit", pd.Series(False)) == True] if "scamdb_hit" in sdf.columns else pd.DataFrame()
+                if not hits.empty:
+                    show = [c for c in ["date","from_address","to_address","amount","token",
+                                         "scamdb_type","scamdb_name"] if c in hits.columns]
+                    st.dataframe(hits[show], use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
+
+        with ed2:
+            st.markdown("**DefiLlama DeFi Hacks Database**")
+            if st.button("📋 Load DeFi Hacks DB", type="primary", key="run_defi_hacks"):
+                with st.spinner("Loading DefiLlama hacks…"):
+                    hacks = fetch_defillama_hacks()
+                    st.session_state.defi_hacks = hacks
+                st.success(f"✅ {len(hacks)} DeFi hacks loaded")
+
+            if "defi_hacks" in st.session_state:
+                hacks = st.session_state.defi_hacks
+                if hacks:
+                    hacks_df = pd.DataFrame(hacks)
+                    total = hacks_df["amount_usd"].sum() if "amount_usd" in hacks_df else 0
+                    st.metric("Total Hacked", f"${total/1e9:.1f}B")
+                    st.dataframe(hacks_df.head(20), use_container_width=True,
+    hide_index=True,
+    column_config={
+        col: st.column_config.TextColumn(
+            col,
+            width="medium"
+        )
+        for col in df.columns
+    }
+)
+                    st.download_button("⬇️ Export Hacks DB",
+                        hacks_df.to_csv(index=False).encode(), "defi_hacks.csv", "text/csv")

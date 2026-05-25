@@ -878,7 +878,28 @@ def render_case_notes(df: Optional[pd.DataFrame] = None):
         tags_df = pd.DataFrame([
             {"address": k, **v} for k, v in notes["address_tags"].items()
         ])
-        st.dataframe(tags_df, width='stretch', hide_index=True)
+        st.dataframe(tags_df, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
         # Export tags as CSV
         st.download_button(

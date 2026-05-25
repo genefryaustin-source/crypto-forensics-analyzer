@@ -61,6 +61,79 @@ except ImportError:
     def generate_full_report(df, **kw): return None
 
 try:
+    from forensics_lightning import render_lightning_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_lightning")
+    def render_lightning_ui(df=None): st.info("Add forensics_lightning.py to enable Lightning Network forensics.")
+
+try:
+    from forensics_stablecoin import render_stablecoin_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_stablecoin")
+    def render_stablecoin_ui(df=None): st.info("Add forensics_stablecoin.py to enable stablecoin depeg forensics.")
+
+try:
+    from forensics_newsfeed import render_newsfeed_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_newsfeed")
+    def render_newsfeed_ui(df=None): st.info("Add forensics_newsfeed.py to enable crypto crime news feed.")
+
+try:
+    from forensics_social import render_social_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_social")
+    def render_social_ui(df=None, get_key_fn=None):
+        st.info("Add forensics_social.py to your app folder to enable social media intelligence.")
+
+try:
+    from forensics_netinfra import render_netinfra_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_netinfra")
+    def render_netinfra_ui(df=None):
+        st.info("Add forensics_netinfra.py to your app folder to enable infrastructure clustering.")
+
+try:
+    from forensics_seedphrase import render_seedphrase_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_seedphrase")
+    def render_seedphrase_ui(df=None, get_key_fn=None):
+        st.info("Add forensics_seedphrase.py to your app folder to enable seed phrase analysis.")
+
+try:
+    from forensics_scams import render_scams_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_scams")
+    def render_scams_ui(df=None):
+        st.info("Add forensics_scams.py to your app folder to enable threat intelligence.")
+
+try:
+    from forensics_profile import render_profile_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_profile")
+    def render_profile_ui(df=None, get_key_fn=None):
+        st.info("Add forensics_profile.py to your app folder to enable suspect profiling.")
+
+try:
+    from forensics_timeline import render_timeline_ui, render_qr_scanner_ui, render_agent_ui
+except ImportError:
+    _OPTIONAL_MISSING.append("forensics_timeline")
+    def render_timeline_ui(df=None): st.info("Add forensics_timeline.py to your app folder.")
+    def render_qr_scanner_ui(df=None): st.info("Add forensics_timeline.py to your app folder.")
+    def render_agent_ui(df=None, get_key_fn=None): st.info("Add forensics_timeline.py to your app folder.")
+
+try:
+    from forensics_export import render_export_ui
+except ImportError:
+    def render_export_ui(df=None, findings=None, get_key_fn=None):
+        st.info("Export UI not available.")
+
+try:
+    from forensics_compliance2 import render_mica_compliance_ui
+except ImportError:
+    def render_mica_compliance_ui(df=None, get_key_fn=None):
+        st.info("Add forensics_compliance2.py to enable MiCA compliance.")
+
+try:
     from forensics_solana import render_solana_ui
 except ImportError:
     _OPTIONAL_MISSING.append("forensics_solana")
@@ -272,19 +345,22 @@ with st.sidebar:
 
     NAV_GROUPS = {
         "📊 Analysis":      ["📊 Overview","📋 Transactions","💸 Sankey Flow","📅 Timeline"],
-        "🔍 Intelligence":  ["🔗 Multi-hop Tracer","🧩 Pattern Intel","⚡ Velocity","🕸 Network Graph"],
+        "🔍 Intelligence":  ["🔗 Multi-hop Tracer","🧩 Pattern Intel","⚡ Velocity","🕸 Network Graph","🏗️ Infrastructure"],
+        "📡 SOCMINT":        ["📡 Social Media Intel"],
         "🤖 AI & ML":       ["🤖 Claude AI","📈 Time Series ML"],
         "⚖️ Compliance":    ["📋 SAR / CTR Filing","🔐 EIP-712 Signing","🔏 ZK Proofs"],
         "🌐 On-chain":      ["🌐 ENS Resolution","🔔 Alerts & Monitoring"],
         "🔎 OSINT":         ["🔎 OSINT Intelligence"],
         "🏷️ Address Intel": ["🏷️ Address Intelligence"],
-        "⚔️ Market Intel":  ["⚔️ MEV & Market Manipulation"],
+        "⚔️ Market Intel":  ["⚔️ MEV & Market Manipulation","🎯 Threat Intel","🤝 P2P & ATMs"],
+        "👤 Profiles":       ["👤 Suspect Profile","🌱 Seed Phrase","📅 Investigation Timeline","📱 QR Scanner","🤖 Investigation Agent"],
         "🔬 Advanced":      ["🖼 NFT & Airdrop","🌍 Geolocation","💾 Save/Restore","💼 Portfolio","📈 Price Ticker"],
-        "📋 Regulatory":    ["✈️ FATF Travel Rule","🔵 L2 Chains","🔐 Multi-sig","🔒 Privacy Coins","📊 Case Dashboard"],
+        "📋 Regulatory":    ["✈️ FATF Travel Rule","🔵 L2 Chains","🔐 Multi-sig","🔒 Privacy Coins","📊 Case Dashboard","🇪🇺 MiCA Compliance"],
         "◎ Solana":          ["◎ Solana Analysis"],
-        "🔬 Deep Analytics": ["🌪️ Tornado Linking","🧠 GNN Clustering","⏳ Mempool Monitor","🔀 Atomic Swaps"],
+        "🔬 Deep Analytics": ["🌪️ Tornado Linking","🧠 GNN Clustering","⏳ Mempool Monitor","🔀 Atomic Swaps","⚡ Lightning Network"],
+        "📰 Crime Intel":     ["📰 Crypto Crime News","💹 Stablecoin Depeg"],
         "🔌 API":             ["🔌 REST API"],
-        "📤 Reports":       ["📄 PDF Report","📤 Export & SIEM","📁 Case Notes"],
+        "📤 Reports":       ["📄 PDF Report","📤 Export & SIEM","🕸 Maltego Export","📁 Case Notes"],
         "⚙️ Settings":      ["⚙️ Configuration"],
     }
     for group, pages in NAV_GROUPS.items():
@@ -1247,7 +1323,28 @@ if (st.session_state.get("do_lookup") or st.session_state.get("do_lookup_both"))
                 all_txs = pd.concat([result['native_txs'], result['token_txs']], ignore_index=True)
 
                 if not all_txs.empty:
-                    st.dataframe(all_txs.head(5000), width='stretch')
+                    st.dataframe(all_txs.head(5000), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
                     if st.button("➕ Add to dataset"):
                         if "loaded_data" not in st.session_state:
@@ -1376,7 +1473,7 @@ if df is not None:
                              color_discrete_map={"CRITICAL":"#ff4444","HIGH":"#ff8800",
                                                  "MEDIUM":"#ffcc00","LOW":"#22c55e"})
             fig_pie.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_pie, width='stretch')
+            st.plotly_chart(fig_pie, width=True)
 
         with col_b:
             st.markdown("**Volume by Token**")
@@ -1384,7 +1481,7 @@ if df is not None:
             fig_bar = px.bar(vol_token, x='token', y='amount',
                              color='amount', color_continuous_scale='Reds')
             fig_bar.update_layout(height=300, margin=dict(t=10,b=10))
-            st.plotly_chart(fig_bar, width='stretch')
+            st.plotly_chart(fig_bar, width=True)
 
         # Top flagged addresses
         st.markdown("**Top Flagged Addresses**")
@@ -1392,7 +1489,28 @@ if df is not None:
             df[['from_address','risk_score']].rename(columns={'from_address':'address'}),
             df[['to_address','risk_score']].rename(columns={'to_address':'address'})
         ]).groupby('address')['risk_score'].max().reset_index().nlargest(10, 'risk_score')
-        st.dataframe(addr_risk, width='stretch', hide_index=True)
+        st.dataframe(addr_risk, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
     # ── TAB 2: Transactions ──────────────────────────────────
     elif page == '📋 Transactions':
@@ -1440,7 +1558,28 @@ if df is not None:
             highlight_risk, subset=['risk_level']
         ).format({'amount': '${:,.2f}', 'risk_score': '{:.0f}'})
 
-        st.dataframe(styled, width='stretch', height=480)
+        st.dataframe(styled, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
         st.caption(
                 f"Showing rows {start+1}–{min(end, len(filtered))} "
                 f"of {len(filtered):,} filtered  |  {len(df):,} total  |  "
@@ -1488,7 +1627,7 @@ if df is not None:
             try:
                 st.plotly_chart(
                     st.session_state.sankey_fig,
-                    width='stretch',
+                    width=True,
                     config={"displayModeBar": True, "scrollZoom": False},
                 )
             except Exception as e:
@@ -1503,7 +1642,7 @@ if df is not None:
         st.subheader("📅 Transaction Timeline")
         fig_tl = create_timeline(df)
         if fig_tl:
-            st.plotly_chart(fig_tl, width='stretch')
+            st.plotly_chart(fig_tl, width=True)
         else:
             st.info("No date column detected in dataset.")
 
@@ -1514,7 +1653,7 @@ if df is not None:
             weekly = df_dated.groupby('week')['amount'].sum().reset_index()
             fig_weekly = px.bar(weekly, x='week', y='amount', title="Weekly Volume")
             fig_weekly.update_layout(height=280)
-            st.plotly_chart(fig_weekly, width='stretch')
+            st.plotly_chart(fig_weekly, width=True)
 
     # ── TAB 5: Multi-hop ─────────────────────────────────────
     elif page == '🔗 Multi-hop Tracer':
@@ -1570,23 +1709,86 @@ if df is not None:
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, width='stretch', hide_index=True)
+                                st.dataframe(styled, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                     with fwd_tabs[1]:
                         for hop_num, txs in trace_result["backward"]["hops"].items():
                             with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                                 hop_df = pd.DataFrame(txs)
                                 styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                                st.dataframe(styled, width='stretch', hide_index=True)
+                                st.dataframe(styled, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 else:
                     for hop_num, txs in trace_result["hops"].items():
                         with st.expander(f"Hop {hop_num} ({len(txs)} txs)", expanded=hop_num==1):
                             hop_df = pd.DataFrame(txs)
                             styled = hop_df.style.map(highlight_risk, subset=['risk_level'])
-                            st.dataframe(styled, width='stretch', hide_index=True)
+                            st.dataframe(styled, use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
             with result_tabs[2]:
                 addr_summary = tracer.get_address_risk_summary(trace_result)
-                st.dataframe(addr_summary, width='stretch')
+                st.dataframe(addr_summary, width=True)
 
             with result_tabs[3]:
                 # Create Sankey from trace
@@ -1602,7 +1804,7 @@ if df is not None:
                     trace_df = pd.DataFrame(all_txs_list)
                     fig_trace = create_sankey(trace_df, top_n=50)
                     if fig_trace:
-                        st.plotly_chart(fig_trace, width='stretch')
+                        st.plotly_chart(fig_trace, width=True)
 
     # ── TAB 6: AI Analysis ───────────────────────────────────
     elif page == '🤖 Claude AI':
@@ -1708,7 +1910,7 @@ if df is not None:
                               else "color:red" if "❌" in str(v) else "",
                     subset=["Status"]
                 ),
-                width='stretch',
+                width=True,
                 hide_index=True,
         )
 
@@ -2132,7 +2334,28 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["anomalies"]:
                     anom_df = pd.DataFrame(res["anomalies"][:50])
                     st.dataframe(anom_df[["address","type","severity","detail","tx_hash"]],
-                                 width='stretch', hide_index=True)
+                                 use_container_width=True,
+                                 height=480,
+                                 hide_index=True,
+                                 column_config={
+                                     "address": st.column_config.TextColumn(
+                                         "Address",
+                                         width="large"
+                                     ),
+                                     "type": st.column_config.TextColumn(
+                                         "Type",
+                                         width="medium"
+                                     ),
+                                     "label": st.column_config.TextColumn(
+                                         "Label",
+                                         width="large"
+                                     ),
+                                     "source": st.column_config.TextColumn(
+                                         "Source",
+                                         width="medium"
+                                     ),
+                                 }
+                                 )
                 else:
                     st.info("No behavioral anomalies detected.")
 
@@ -2141,7 +2364,28 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["mixers"]:
                     mix_df = pd.DataFrame(res["mixers"])
                     st.dataframe(mix_df[["address","mixer_score","fan_in","fan_out","total_volume","classification"]].style.background_gradient(
-                        subset=["mixer_score"], cmap="Reds"), width='stretch', hide_index=True)
+                        subset=["mixer_score"], cmap="Reds"), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 else:
                     st.info("No mixer candidates detected.")
 
@@ -2163,7 +2407,28 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["peeling"]:
                     peel_df = pd.DataFrame(res["peeling"])
                     st.dataframe(peel_df[["chain_length","start_address","end_address","start_amount","end_amount","peel_pct","severity"]],
-                                 width='stretch', hide_index=True)
+                                 use_container_width=True,
+                                 height=480,
+                                 hide_index=True,
+                                 column_config={
+                                     "address": st.column_config.TextColumn(
+                                         "Address",
+                                         width="large"
+                                     ),
+                                     "type": st.column_config.TextColumn(
+                                         "Type",
+                                         width="medium"
+                                     ),
+                                     "label": st.column_config.TextColumn(
+                                         "Label",
+                                         width="large"
+                                     ),
+                                     "source": st.column_config.TextColumn(
+                                         "Source",
+                                         width="medium"
+                                     ),
+                                 }
+                                 )
                 else:
                     st.info("No peeling chains detected.")
 
@@ -2172,7 +2437,28 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                 if res["cross_chain"]:
                     cc_df = pd.DataFrame(res["cross_chain"])
                     st.dataframe(cc_df[["chain_from","chain_to","amount","delta_hours","token_a","token_b","address_from"]],
-                                 width='stretch', hide_index=True)
+                                 use_container_width=True,
+                                 height=480,
+                                 hide_index=True,
+                                 column_config={
+                                     "address": st.column_config.TextColumn(
+                                         "Address",
+                                         width="large"
+                                     ),
+                                     "type": st.column_config.TextColumn(
+                                         "Type",
+                                         width="medium"
+                                     ),
+                                     "label": st.column_config.TextColumn(
+                                         "Label",
+                                         width="large"
+                                     ),
+                                     "source": st.column_config.TextColumn(
+                                         "Source",
+                                         width="medium"
+                                     ),
+                                 }
+                                 )
                 else:
                     st.info("No cross-chain hops detected (requires multi-chain dataset).")
 
@@ -2210,13 +2496,33 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
             v3.metric("🟠 Rapid (<1hr)",     (vel["velocity_class"].str.contains("RAPID")).sum())
             v4.metric("Avg TTF",             f"{vel['ttf_hours'].median():.1f} hrs")
 
-            st.plotly_chart(plot_velocity_distribution(vel), width='stretch')
+            st.plotly_chart(plot_velocity_distribution(vel), width=True)
 
             st.markdown("**Highest Velocity Addresses**")
             show_cols = [c for c in ["address","ttf_minutes","velocity_class","velocity_score","volume_sent","pass_through_ratio"] if c in vel.columns]
             st.dataframe(
                 vel[show_cols].head(50).style.background_gradient(subset=["velocity_score"], cmap="Reds"),
-                width='stretch', hide_index=True
+                use_container_width=True,
+                height=480,
+                hide_index=True,
+                column_config={
+                    "address": st.column_config.TextColumn(
+                        "Address",
+                        width="large"
+                    ),
+                    "type": st.column_config.TextColumn(
+                        "Type",
+                        width="medium"
+                    ),
+                    "label": st.column_config.TextColumn(
+                        "Label",
+                        width="large"
+                    ),
+                    "source": st.column_config.TextColumn(
+                        "Source",
+                        width="medium"
+                    ),
+                }
             )
 
             st.download_button("⬇️ Export Velocity CSV",
@@ -2245,7 +2551,7 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                         st.error("networkx not installed. Run: pip install networkx")
 
         if "ng_fig" in st.session_state:
-            st.plotly_chart(st.session_state.ng_fig, width='stretch')
+            st.plotly_chart(st.session_state.ng_fig, width=True)
 
         st.markdown("**Wallet Profiler** — full forensic profile for any address")
         prof_addr = st.text_input("Address to profile", placeholder="Paste from table or graph above", key="prof_addr")
@@ -2300,7 +2606,28 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
         if "enriched_df" in st.session_state:
             edf = st.session_state.enriched_df
             show = [c for c in ["date","from_address","from_label","to_address","to_label","amount","token"] if c in edf.columns]
-            st.dataframe(edf[show].head(100), width='stretch', hide_index=True)
+            st.dataframe(edf[show].head(100), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
 
     elif page == "🔔 Alerts & Monitoring":
         render_alerts_ui(get_key_fn=get_key)
@@ -2332,25 +2659,80 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
                             if fig is not None:
                                 st.plotly_chart(
                                     fig,
-                                    width='stretch',
+                                    width=True,
                                     key=f"plot_{time.time_ns()}"
                                 )
                 else: st.info("None detected.")
             with t2:
-                if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), width='stretch', hide_index=True)
+                if ts["cycl"]: st.dataframe(pd.DataFrame(ts["cycl"]), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 else: st.info("None detected.")
             with t3:
-                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), width='stretch', hide_index=True)
+                if ts["dorm"]: st.dataframe(pd.DataFrame(ts["dorm"]), use_container_width=True,
+    height=480,
+    hide_index=True,
+    column_config={
+        "address": st.column_config.TextColumn(
+            "Address",
+            width="large"
+        ),
+        "type": st.column_config.TextColumn(
+            "Type",
+            width="medium"
+        ),
+        "label": st.column_config.TextColumn(
+            "Label",
+            width="large"
+        ),
+        "source": st.column_config.TextColumn(
+            "Source",
+            width="medium"
+        ),
+    }
+)
                 else: st.info("None detected.")
         st.divider()
         ts_a = st.text_input("Address timeline", key="ts_addr", placeholder="Paste address")
         if ts_a:
             fig = plot_address_timeline(df, ts_a)
-            if fig: st.plotly_chart(fig, width='stretch')
+            if fig: st.plotly_chart(fig, width=True)
 
 
 
 
+
+
+    # ── Lightning Network ─────────────────────────────────
+    elif page == "⚡ Lightning Network":
+        render_lightning_ui(df)
+
+    # ── Stablecoin Depeg ─────────────────────────────────
+    elif page == "💹 Stablecoin Depeg":
+        render_stablecoin_ui(df)
+
+    # ── Crypto Crime News ─────────────────────────────────
+    elif page == "📰 Crypto Crime News":
+        render_newsfeed_ui(df)
 
     # ── Solana ───────────────────────────────────────────
     elif page == "◎ Solana Analysis":
@@ -2363,6 +2745,47 @@ breadcrumbs_key  = "YOUR_BREADCRUMBS_KEY"
     # ── REST API ─────────────────────────────────────────
     elif page == "🔌 REST API":
         render_api_ui()
+
+
+
+    # ── Social Media Intelligence ─────────────────────────
+    elif page == "📡 Social Media Intel":
+        render_social_ui(df, get_key_fn=get_key)
+
+    # ── Infrastructure Clustering ─────────────────────────
+    elif page == "🏗️ Infrastructure":
+        render_netinfra_ui(df)
+
+    # ── Threat Intelligence ───────────────────────────────
+    elif page == "🎯 Threat Intel":
+        render_scams_ui(df)
+
+    elif page == "🤝 P2P & ATMs":
+        render_scams_ui(df)
+
+    # ── Profile & Timeline ────────────────────────────────
+    elif page == "👤 Suspect Profile":
+        render_profile_ui(df, get_key_fn=get_key)
+
+    elif page == "🌱 Seed Phrase":
+        render_seedphrase_ui(df, get_key_fn=get_key)
+
+    elif page == "📅 Investigation Timeline":
+        render_timeline_ui(df)
+
+    elif page == "📱 QR Scanner":
+        render_qr_scanner_ui(df)
+
+    elif page == "🤖 Investigation Agent":
+        render_agent_ui(df, get_key_fn=get_key)
+
+    # ── MiCA Compliance ───────────────────────────────────
+    elif page == "🇪🇺 MiCA Compliance":
+        render_mica_compliance_ui(df, get_key_fn=get_key)
+
+    # ── Maltego Export ────────────────────────────────────
+    elif page == "🕸 Maltego Export":
+        render_export_ui(df, get_key_fn=get_key)
 
     # ── MEV & Market Manipulation ────────────────────────
     elif page == "⚔️ MEV & Market Manipulation":

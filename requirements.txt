@@ -1,25 +1,56 @@
-# Crypto Forensics Analyzer Pro v5.0
-# requirements.txt for Streamlit Cloud deployment
+# ═══════════════════════════════════════════════════════════════
+# Crypto Forensics Analyzer Pro v5.0 — requirements.txt
+# Python 3.11+ required  |  Streamlit Cloud compatible
+# ═══════════════════════════════════════════════════════════════
 
-# Core
-streamlit>=1.32.0
-pandas>=2.0.0
-numpy>=1.24.0
+# ── Core Framework ──────────────────────────────────────────────
+streamlit>=1.35.0
 
-# Charts — plotly>=5.0.0 required for Sankey customdata hover
-plotly>=5.0.0
+# ── Data Processing ─────────────────────────────────────────────
+pandas>=2.1.0
+numpy>=1.26.0
 
-# ML
-scikit-learn>=1.3.0
-networkx>=3.0
+# ── Visualization ────────────────────────────────────────────────
+plotly>=5.18.0
 
-# HTTP
+# ── HTTP / Networking ────────────────────────────────────────────
 requests>=2.31.0
+httpx>=0.27.0
+websockets>=12.0
 
-# PDF generation
-reportlab>=4.0.0
+# ── PDF Generation ───────────────────────────────────────────────
+reportlab>=4.1.0
 
-# Optional — uncomment if you use these features
-# fastapi>=0.110.0
-# uvicorn[standard]>=0.27.0
-# eth-account>=0.10.0
+# ── Machine Learning & Clustering ────────────────────────────────
+# Used by: forensics_netinfra.py, forensics_patterns.py,
+#          forensics_timeseries.py, forensics_address_intel.py
+scikit-learn>=1.4.0
+
+# ── Graph Analytics ──────────────────────────────────────────────
+# Used by: forensics_intel.py (network graph), forensics_advanced2.py
+networkx>=3.2.0
+
+# ── REST API Server ──────────────────────────────────────────────
+# Run separately: uvicorn forensics_api:app --port 8001
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0.0
+
+# ── Image Processing ─────────────────────────────────────────────
+# Used by: forensics_timeline.py (QR scanner), forensics_fullreport.py
+#          (screenshot embedding in PDF), forensics_compliance2.py
+Pillow>=10.3.0
+
+# ── QR Code ──────────────────────────────────────────────────────
+# qrcode: generation (display/download)
+# pyzbar: scanning — requires system library (see packages.txt below)
+# Both are try/except guarded — app works without them
+qrcode[pil]>=7.4.0
+pyzbar>=0.1.9
+
+# ── Cryptography ─────────────────────────────────────────────────
+# pycryptodome: keccak256 for seed phrase Ethereum address derivation
+# eth-account:  EIP-712 structured signing (forensics_crypto.py)
+# Both are try/except guarded — graceful fallback if missing
+pycryptodome>=3.20.0
+eth-account>=0.10.0

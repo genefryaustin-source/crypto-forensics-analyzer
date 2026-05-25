@@ -244,6 +244,186 @@ def generate_sar_pdf(
     return buf
 
 
+
+
+# ─────────────────────────────────────────────────────────────
+# AUTO-SAR: Generate complete SAR narrative from all session data
+# ─────────────────────────────────────────────────────────────
+
+def generate_auto_sar_from_session(
+    df:                 "pd.DataFrame",
+    case_id:            str = "",
+    filing_institution: str = "",
+    investigator:       str = "Crypto Forensics Analyzer Pro",
+) -> str:
+    """
+    Automatically generate a complete SAR narrative by reading ALL
+    analysis results from st.session_state. No manual input required.
+    Pulls: risk scores, OFAC hits, ransomware, patterns, velocity,
+    clustering, DPRK, pig butchering, exchange endpoints, and more.
+    """
+    import streamlit as st
+    import pandas as pd
+    from datetime import datetime
+
+    case_id  = case_id  or f"AUTO-SAR-{datetime.now().strftime('%Y%m%d-%H%M')}"
+    date_str = datetime.now().strftime("%B %d, %Y")
+
+    # ── Gather findings from session_state ───────────────────
+    sections = []
+    subject_addrs = []
+    typologies    = []
+    total_vol     = float(df["amount"].sum()) if not df.empty else 0.0
+
+    # Dataset basics
+    if not df.empty:
+        critical = int((df.get("risk_level","") == "CRITICAL").sum()) if "risk_level" in df.columns else 0
+        high     = int((df.get("risk_level","") == "HIGH").sum()) if "risk_level" in df.columns else 0
+        chains   = df["chain"].unique().tolist() if "chain" in df.columns else []
+        tokens   = df["token"].unique().tolist() if "token" in df.columns else []
+
+        sections.append(
+            f"Analysis of {len(df):,} blockchain transactions across "
+            f"{', '.join(chains[:3]) or 'multiple'} chain(s) identified "
+            f"{critical} CRITICAL-risk and {high} HIGH-risk transactions "
+            f"totaling ${total_vol:,.2f} in transaction volume."
+        )
+
+        # Top addresses by volume
+        top_senders = df.groupby("from_address")["amount"].sum().nlargest(5).index.tolist()
+        subject_addrs.extend(top_senders)
+
+    # OFAC
+    ofac_df = st.session_state.get("ofac_df")
+    if isinstance(ofac_df, pd.DataFrame) and not ofac_df.empty and "ofac_hit" in ofac_df.columns:
+        hits = ofac_df[ofac_df["ofac_hit"]]
+        if not hits.empty:
+            entities = hits["ofac_entity"].dropna().unique().tolist()
+            sections.append(
+                f"OFAC SDN SCREENING: {len(hits)} transactions involved OFAC-sanctioned addresses. "
+                f"Identified entities: {', '.join(entities[:3])}. "
+                f"This constitutes a potential sanctions violation under 31 CFR Part 501."
+            )
+            typologies.append("Use of OFAC-sanctioned address (31 CFR Part 501)")
+            subject_addrs.extend(hits["from_address"].tolist()[:3])
+
+    # Ransomware
+    rw_df = st.session_state.get("rw_df")
+    if isinstance(rw_df, pd.DataFrame) and not rw_df.empty and "ransomware_hit" in rw_df.columns:
+        hits = rw_df[rw_df["ransomware_hit"]]
+        if not hits.empty:
+            families = hits["ransomware_family"].dropna().unique().tolist()
+            sections.append(
+                f"RANSOMWARE: {len(hits)} transactions linked to confirmed ransomware addresses. "
+                f"Malware families: {', '.join(families[:3])}. "
+                f"Sources: Ransomwhere.co, Abuse.ch ThreatFox, CISA advisories."
+            )
+            typologies.append("Ransomware payment (FBI-designated cybercrime)")
+
+    # Pattern intel
+    pr = st.session_state.get("pattern_results", {})
+    if pr.get("structuring"):
+        n = len(pr["structuring"])
+        sections.append(
+            f"STRUCTURING: {n} structuring pattern(s) detected. "
+            f"Transaction amounts appear deliberately maintained below reporting thresholds "
+            f"consistent with FATF Typology #3 (structuring/smurfing)."
+        )
+        typologies.append("Structuring / Smurfing (31 USC 5324, FATF #3)")
+
+    if pr.get("circular"):
+        n = len(pr["circular"])
+        sections.append(
+            f"CIRCULAR FLOWS: {n} circular fund flow pattern(s) identified. "
+            f"Funds returned to origin addresses after passing through intermediaries, "
+            f"consistent with layering behavior."
+        )
+        typologies.append("Circular flow / layering (FATF placement and layering stages)")
+
+    if pr.get("mixers"):
+        n = len(pr["mixers"])
+        sections.append(
+            f"MIXING SERVICES: {n} address(es) exhibited mixer-like behavior "
+            f"(high fan-in/fan-out ratio with uniform amounts)."
+        )
+        typologies.append("Use of cryptocurrency mixing service (FATF #8)")
+
+    # Velocity
+    vel_df = st.session_state.get("vel_df")
+    if isinstance(vel_df, pd.DataFrame) and not vel_df.empty:
+        instant = vel_df[vel_df.get("velocity_class","").str.contains("INSTANT", na=False)]                   if "velocity_class" in vel_df.columns else pd.DataFrame()
+        if not instant.empty:
+            sections.append(
+                f"RAPID FUND MOVEMENT: {len(instant)} address(es) forwarded received funds "
+                f"within 15 minutes of receipt (time-to-forward analysis), "
+                f"consistent with automated layering."
+            )
+            typologies.append("Rapid movement of funds (<15 min TTF) (FinCEN red flag)")
+
+    # Pig butchering
+    pig_df = st.session_state.get("pig_df")
+    if isinstance(pig_df, pd.DataFrame) and not pig_df.empty:
+        sections.append(
+            f"INVESTMENT FRAUD: {len(pig_df)} pig butchering / romance investment scam "
+            f"pattern(s) detected. Victims made escalating payments to scammer address(es) "
+            f"over an extended period before funds were cashed out."
+        )
+        typologies.append("Investment fraud / pig butchering (FBI IC3 category)")
+
+    # DPRK
+    dprk_df = st.session_state.get("dprk_df")
+    if isinstance(dprk_df, pd.DataFrame) and not dprk_df.empty:
+        sections.append(
+            f"DPRK/LAZARUS: {len(dprk_df)} transaction(s) linked to North Korean "
+            f"Lazarus Group addresses or behavioral patterns per FBI/CISA intelligence. "
+            f"This may constitute a national security matter requiring immediate LE referral."
+        )
+        typologies.append("DPRK/Lazarus Group connection (FBI/CISA designated threat actor)")
+
+    # Exchange endpoints
+    exc_df = st.session_state.get("exc_df")
+    if isinstance(exc_df, pd.DataFrame) and not exc_df.empty and "exchange_name" in exc_df.columns:
+        exchanges = exc_df["exchange_name"].dropna().unique().tolist()
+        sections.append(
+            f"EXCHANGE ENDPOINTS: Funds traced to {', '.join(exchanges[:3])} "
+            f"({len(exc_df)} transactions). Legal process served to these exchanges "
+            f"may yield KYC identity of the account holder."
+        )
+
+    # Tornado Cash
+    tc_df = st.session_state.get("tc_df")
+    if isinstance(tc_df, pd.DataFrame) and not tc_df.empty:
+        sections.append(
+            f"TORNADO CASH: {len(tc_df)} statistical link(s) between Tornado Cash "
+            f"deposits and withdrawals identified. Tornado Cash is OFAC-sanctioned "
+            f"(August 2022). All interactions constitute potential sanctions violations."
+        )
+        typologies.append("Use of OFAC-sanctioned Tornado Cash mixer")
+
+    # Build the narrative
+    findings_text = "\n\n".join(sections) if sections else "See attached transaction analysis data."
+    if not typologies:
+        typologies = ["Suspicious virtual currency activity — see narrative"]
+
+    subject_addrs = list(dict.fromkeys(subject_addrs))[:20]   # Dedupe, cap at 20
+
+    return generate_sar_narrative(
+        case_id=case_id,
+        subject_addresses=subject_addrs,
+        total_volume=total_vol,
+        typologies=typologies,
+        findings_summary=findings_text,
+        investigator=investigator,
+        filing_institution=filing_institution,
+        recommendation=(
+            "IMMEDIATE LAW ENFORCEMENT REFERRAL RECOMMENDED"
+            if any(t in typologies for t in ["DPRK","OFAC","Ransomware"])
+            else "SAR FILING RECOMMENDED"
+        ),
+    )
+
+
+
 def render_compliance_ui(df: Optional[pd.DataFrame] = None):
     """Full SAR/CTR compliance filing UI."""
     st.markdown("### ⚖️ SAR / CTR Compliance Filing")
@@ -300,7 +480,23 @@ def render_compliance_ui(df: Optional[pd.DataFrame] = None):
             if df is not None else "See attached transaction analysis."
         )
 
-        if st.button("📋 Generate SAR", type="primary"):
+        col_auto, col_manual = st.columns(2)
+        if col_auto.button("🤖 Auto-Generate SAR from All Findings", type="primary", key="auto_sar_btn"):
+            with st.spinner("Reading all analysis results from session…"):
+                narrative = generate_auto_sar_from_session(
+                    df=df, case_id=case_id,
+                    filing_institution=filing_inst, investigator=investigator,
+                )
+            st.session_state.sar_narrative = narrative
+            st.session_state.sar_meta = {
+                "case_id": case_id, "filing_inst": filing_inst, "ein": ein,
+                "subject_addrs": [a.strip() for a in addr_text.split("\n") if a.strip()],
+                "total_vol": total_vol,
+                "date_from": str(date_from), "date_to": str(date_to),
+            }
+            st.success("✅ Auto-SAR generated from all session analysis results")
+
+        if col_manual.button("📋 Generate SAR (Manual)", type="secondary", key="manual_sar_btn"):
             narrative = generate_sar_narrative(
                 case_id=case_id, subject_addresses=subject_addrs,
                 total_volume=total_vol, typologies=selected_typos or ["Under investigation"],
@@ -353,7 +549,7 @@ def render_compliance_ui(df: Optional[pd.DataFrame] = None):
             if not large_txs.empty:
                 st.warning(f"⚠️ {len(large_txs)} transactions ≥ $10,000 detected — CTR may be required")
                 st.dataframe(large_txs[["date","from_address","to_address","amount","token"]],
-                             width='stretch', hide_index=True)
+                             width=True, hide_index=True)
                 if st.button("📋 Generate CTR Data", key="gen_ctr"):
                     ctr = generate_ctr_data(ctr_filer, ctr_ein,
                                              large_txs.to_dict("records"))

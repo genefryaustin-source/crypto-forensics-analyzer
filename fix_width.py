@@ -11,7 +11,7 @@ for f in files:
     for line in lines:
         if "st.button(" in line and "width=" in line:
             line = line.replace(", use_container_width=True", ", use_container_width=True")
-            line = line.replace(",width='stretch'", ", use_container_width=True")
+            line = line.replace(",width='content'", ", use_container_width=True")
             line = line.replace(", width='content'", "")
             line = line.replace(",width='content'", "")
         fixed.append(line)

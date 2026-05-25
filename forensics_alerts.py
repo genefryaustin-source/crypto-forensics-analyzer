@@ -274,7 +274,28 @@ def render_alerts_ui(get_key_fn=None):
         if wl:
             wl_df = pd.DataFrame(wl)
             st.dataframe(wl_df[["address","chain","label","added"]],
-                         width='stretch', hide_index=True)
+                         use_container_width=True,
+                         height=480,
+                         hide_index=True,
+                         column_config={
+                             "address": st.column_config.TextColumn(
+                                 "Address",
+                                 width="large"
+                             ),
+                             "type": st.column_config.TextColumn(
+                                 "Type",
+                                 width="medium"
+                             ),
+                             "label": st.column_config.TextColumn(
+                                 "Label",
+                                 width="large"
+                             ),
+                             "source": st.column_config.TextColumn(
+                                 "Source",
+                                 width="medium"
+                             ),
+                         }
+                         )
             if st.button("🗑️ Clear Watchlist", key="clear_wl"):
                 save_watchlist([])
                 st.rerun()
@@ -337,5 +358,26 @@ def render_alerts_ui(get_key_fn=None):
                     )
                     if log_entries:
                         alert_log.dataframe(pd.DataFrame(log_entries[:20]),
-                                            width='stretch', hide_index=True)
+                                            use_container_width=True,
+                                            height=480,
+                                            hide_index=True,
+                                            column_config={
+                                                "address": st.column_config.TextColumn(
+                                                    "Address",
+                                                    width="large"
+                                                ),
+                                                "type": st.column_config.TextColumn(
+                                                    "Type",
+                                                    width="medium"
+                                                ),
+                                                "label": st.column_config.TextColumn(
+                                                    "Label",
+                                                    width="large"
+                                                ),
+                                                "source": st.column_config.TextColumn(
+                                                    "Source",
+                                                    width="medium"
+                                                ),
+                                            }
+                                            )
                     time.sleep(poll_sec)
